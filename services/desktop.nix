@@ -41,7 +41,7 @@ let
     if ! id -u user >/dev/null 2>&1; then
       useradd -m -s /bin/zsh user
       echo "user ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-      
+
       su - user -c "mkdir -p ~/.config ~/.local/share/applications ~/Downloads"
       
       if [ -d "${./desktop}/etc/xdg" ]; then
@@ -49,7 +49,15 @@ let
         chown -R user:user /home/user/.config
         chmod -R 755 /home/user/.config
       fi
-      
+
+      cat > /home/user/.config/mimeapps.list << EOF
+[Default Applications]
+application/pdf=firefox.desktop
+text/html=firefox.desktop
+x-scheme-handler/http=firefox.desktop
+x-scheme-handler/https=firefox.desktop
+EOF
+
       ANGR_ICON=$(find /nix/store -path "*/angrmanagement/resources/images/angr.png" 2>/dev/null | head -1)
       if [ -z "$ANGR_ICON" ]; then
         ANGR_ICON="application-x-executable"
@@ -69,11 +77,20 @@ StartupNotify=true
 EOF
       
       cp /etc/zsh/newuser.zshrc.recommended /home/user/.zshrc 2>/dev/null || touch /home/user/.zshrc
+      echo 'prompt off' >> /home/user/.zshrc
       echo 'bindkey "^H" backward-kill-word' >> /home/user/.zshrc
       echo 'bindkey "^[[1;5C" forward-word' >> /home/user/.zshrc
       echo 'bindkey "^[[1;5D" backward-word' >> /home/user/.zshrc
       echo 'bindkey "^[^?" backward-kill-word' >> /home/user/.zshrc
       echo 'source <(fzf --zsh 2>/dev/null || true)' >> /home/user/.zshrc
+      echo 'alias ls="eza -l --icons"' >> /home/user/.zshrc
+      echo 'alias grep="grep --color=auto"' >> /home/user/.zshrc
+      echo 'alias open="xdg-open 2>/dev/null"' >> /home/user/.zshrc
+      echo 'eval "$(zoxide init zsh)"' >> /home/user/.zshrc
+      echo 'source ${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh' >> /home/user/.zshrc
+      cat >> /home/user/.zshrc << 'ZSHEOF'
+PROMPT=$'\n%F{green}%n@%m%f %F{blue}%(4~|%-1~/.../%2~|%3~)%f\n%F{red}$%f '
+ZSHEOF
       
       chown -R user:user /home/user
       chmod 755 /home/user
@@ -81,6 +98,11 @@ EOF
       chmod 644 /home/user/.zshrc
       
       su - user -c "PATH='/nix/var/nix/profiles/security-env/bin:$PATH' tldr --update" || true
+    fi
+
+    DUMPCAP=$(find /nix/var/nix/profiles/security-env -name dumpcap 2>/dev/null | head -1)
+    if [ -n "$DUMPCAP" ]; then
+      setcap cap_net_raw,cap_net_admin=ep "$DUMPCAP"
     fi
 
     export DISPLAY=:0
@@ -127,6 +149,8 @@ EOF
     ] ++ (with pkgs; [
       dbus
       dejavu_fonts
+      nerd-fonts.fira-code
+      nerd-fonts.hack
       blackbird
     ]);
   };
