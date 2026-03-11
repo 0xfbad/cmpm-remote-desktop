@@ -1,0 +1,41 @@
+
+# eza instead of ls
+alias ls="eza -l --icons"
+alias la="eza -la --icons"
+alias l="eza --icons"
+alias ll="eza -l --icons"
+
+# directory navigation
+alias ..="cd .."
+alias ...="cd ../.."
+alias ....="cd ../../.."
+alias .....="cd ../../../.."
+alias -- -="cd -"
+alias md="mkdir -p"
+alias rd="rmdir"
+
+# directory stack
+alias d="dirs -v"
+for index ({1..9}) alias "$index"="cd -$index"; unset index
+
+# safety nets
+alias cp="cp -i"
+alias mv="mv -i"
+
+# color
+alias grep="grep --color=auto"
+alias fgrep="fgrep --color=auto"
+alias egrep="egrep --color=auto"
+alias diff="diff --color=auto"
+alias ip="ip --color=auto"
+
+# misc
+alias open="xdg-open 2>/dev/null"
+
+# zoxide as cd
+eval "$(zoxide init zsh --cmd cd)"
+
+# fzf
+source <(fzf --zsh 2>/dev/null || true)
+
+PROMPT=$'\n%F{green}%n@%m%f %F{blue}%(4~|%-1~/.../%2~|%3~)%f\n%F{red}$%f '

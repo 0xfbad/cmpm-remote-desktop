@@ -1,0 +1,96 @@
+{
+  "policies": {
+    "DisplayBookmarksToolbar": "always",
+    "NoDefaultBookmarks": true,
+    "DontCheckDefaultBrowser": true,
+    "DisableFirefoxAccounts": true,
+    "DisableFirefoxStudies": true,
+    "DisableTelemetry": true,
+    "DisablePocket": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "Homepage": {
+      "StartPage": "homepage",
+      "URL": "https://cmpm-sec-01.acad.ucsc.edu/challenges"
+    },
+    "FirefoxHome": {
+      "Search": true,
+      "TopSites": false,
+      "SponsoredTopSites": false,
+      "Highlights": false,
+      "Pocket": false,
+      "SponsoredPocket": false,
+      "Snippets": false,
+      "Locked": true
+    },
+    "Bookmarks": [
+      {
+        "Title": "Challenges",
+        "URL": "https://cmpm-sec-01.acad.ucsc.edu/challenges",
+        "Placement": "toolbar"
+      },
+      {
+        "Title": "SlugSec",
+        "URL": "https://slugsec.ucsc.edu",
+        "Placement": "toolbar"
+      },
+      {
+        "Title": "CyberChef",
+        "URL": "https://gchq.github.io/CyberChef/",
+        "Placement": "toolbar"
+      }
+    ],
+    "Certificates": {
+      "ImportEnterpriseRoots": true,
+      "Install": [
+        "/usr/local/share/ca-certificates/cmpm-sec-01.pem"
+      ]
+    },
+    "Preferences": {
+      "security.sandbox.warn_unprivileged_namespaces": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "security.insecure_field_warning.contextual.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "security.insecure_password.ui.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "signon.rememberSignons": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "datareporting.policy.dataSubmissionPolicyBypassNotification": {
+        "Value": true,
+        "Status": "locked"
+      },
+      "browser.tabs.firefox-view": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "browser.tabs.firefox-view-next": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "devtools.accessibility.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "devtools.memory.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "devtools.performance.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "devtools.application.enabled": {
+        "Value": false,
+        "Status": "locked"
+      }
+    }
+  }
+}
