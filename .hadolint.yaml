@@ -1,0 +1,4 @@
+# kali-rolling is intentionally untagged and unpinned
+ignored:
+  - DL3006  # always tag image version
+  - DL3008  # pin versions in apt-get

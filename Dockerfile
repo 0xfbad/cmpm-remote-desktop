@@ -1,4 +1,5 @@
 FROM kalilinux/kali-rolling
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive
 
