@@ -2,7 +2,7 @@
 
 # machine-id required for dbus
 if [ ! -f /etc/machine-id ]; then
-    dbus-uuidgen > /etc/machine-id
+  dbus-uuidgen >/etc/machine-id
 fi
 mkdir -p /var/lib/dbus
 ln -sf /etc/machine-id /var/lib/dbus/machine-id
@@ -14,20 +14,20 @@ USERNAME=$(echo "${CTFD_USERNAME:-user}" | tr '[:upper:]' '[:lower:]' | sed 's/[
 USERNAME="${USERNAME:-user}"
 
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
-    useradd -m -s /bin/zsh "$USERNAME"
-    echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+  useradd -m -s /bin/zsh "$USERNAME"
+  echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >>/etc/sudoers
 
-    su - "$USERNAME" -c "mkdir -p ~/Downloads"
+  su - "$USERNAME" -c "mkdir -p ~/Downloads"
 
-    chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
-    chmod 755 "/home/$USERNAME"
+  chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
+  chmod 755 "/home/$USERNAME"
 
-    su - "$USERNAME" -c "tldr --update" || true
+  su - "$USERNAME" -c "tldr --update" || true
 fi
 
 DUMPCAP=$(command -v dumpcap 2>/dev/null)
 if [ -n "$DUMPCAP" ]; then
-    setcap cap_net_raw,cap_net_admin=ep "$DUMPCAP"
+  setcap cap_net_raw,cap_net_admin=ep "$DUMPCAP"
 fi
 
 ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
@@ -38,16 +38,16 @@ RESOLUTION="${RESOLUTION:-1920x1080}"
 VNC_PASS="${VNC_PASSWORD:-$(openssl rand -base64 6)}"
 
 mkdir -p "/home/$USERNAME/.vnc"
-echo "$VNC_PASS" | vncpasswd -f > "/home/$USERNAME/.vnc/passwd"
+echo "$VNC_PASS" | vncpasswd -f >"/home/$USERNAME/.vnc/passwd"
 chmod 600 "/home/$USERNAME/.vnc/passwd"
 chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/.vnc"
 
 Xvnc $DISPLAY \
-    -localhost 0 \
-    -SecurityTypes VncAuth \
-    -PasswordFile "/home/$USERNAME/.vnc/passwd" \
-    -geometry "$RESOLUTION" \
-    -depth 24 &
+  -localhost 0 \
+  -SecurityTypes VncAuth \
+  -PasswordFile "/home/$USERNAME/.vnc/passwd" \
+  -geometry "$RESOLUTION" \
+  -depth 24 &
 
 websockify --web /usr/share/novnc 6080 localhost:5900 &
 
