@@ -5,8 +5,8 @@ Browser-accessible Kali Linux desktop for the CMPM 17 security course, students 
 ## Quick start
 
 ```bash
-docker build -t kali-remote-desktop .
-docker run -d -p 6080:6080 -e VNC_PASSWORD=testpass kali-remote-desktop
+docker build -t ctfd-remote-desktop .
+docker run -d -p 6080:6080 -e VNC_PASSWORD=testpass ctfd-remote-desktop
 ```
 
 Then open `http://localhost:6080/vnc.html?autoconnect=true&password=testpass` in a browser, or omit the password param to get a VNC auth prompt
@@ -117,4 +117,4 @@ For stuff in Kali repos just add it to the appropriate apt layer in the Dockerfi
 
 ## Plugin compatibility
 
-The CTFd plugin passes the student's display name as `CTFD_USERNAME` so the container creates a personalized linux account, generates a random password per container and passes it as `VNC_PASSWORD`, then builds a direct URL with the password embedded as a query param so students auto-connect with no dialog. The plugin expects containers exposing ports 5900 and 6080, accepting `CTFD_USERNAME`, `VNC_PASSWORD`, and `RESOLUTION` env vars, and serving noVNC at `/vnc.html`, just update `docker_image` in the plugin config to point at the new tag
+The CTFd plugin passes the student's display name as `CTFD_USERNAME` so the container creates a personalized linux account, generates a random password per container and passes it as `VNC_PASSWORD`, then builds a direct URL with the password embedded as a query param so students auto-connect with no dialog. The plugin expects containers exposing ports 5900 and 6080, accepting `CTFD_USERNAME`, `VNC_PASSWORD`, and `RESOLUTION` env vars, and serving noVNC at `/vnc.html`, the plugin expects the image tagged as `ctfd-remote-desktop:latest` by default, which is configurable in the plugin's admin settings
