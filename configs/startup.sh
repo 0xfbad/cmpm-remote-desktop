@@ -1,5 +1,7 @@
 #!/bin/bash
 
+trap 'kill $(jobs -p) 2>/dev/null; exit 0' INT TERM
+
 # machine-id required for dbus
 if [ ! -f /etc/machine-id ]; then
   dbus-uuidgen >/etc/machine-id
@@ -38,7 +40,7 @@ RESOLUTION="${RESOLUTION:-1920x1080}"
 VNC_PASS="${VNC_PASSWORD:-$(openssl rand -base64 6)}"
 
 mkdir -p "/home/$USERNAME/.vnc"
-echo "$VNC_PASS" | vncpasswd -f >"/home/$USERNAME/.vnc/passwd"
+echo "$VNC_PASS" | tigervncpasswd -f >"/home/$USERNAME/.vnc/passwd"
 chmod 600 "/home/$USERNAME/.vnc/passwd"
 chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/.vnc"
 
