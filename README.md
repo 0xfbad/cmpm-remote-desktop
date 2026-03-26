@@ -6,7 +6,7 @@ Browser-accessible Kali Linux desktop for the CMPM 17 security course, students 
 
 ```bash
 docker build -t ctfd-remote-desktop .
-docker run -d -p 6080:6080 -e VNC_PASSWORD=testpass ctfd-remote-desktop
+docker run --rm -p 6080:6080 -e CTFD_USERNAME=testuser -e VNC_PASSWORD=testpass ctfd-remote-desktop
 ```
 
 Then open `http://localhost:6080/vnc.html?autoconnect=true&password=testpass` in a browser, or omit the password param to get a VNC auth prompt
