@@ -164,7 +164,9 @@ COPY assets/SlugSec-Community-Banner.png /usr/share/backgrounds/SlugSec-Communit
 RUN mkdir -p /etc/skel/.config
 COPY configs/zshrc /tmp/custom-zshrc
 RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; } > /etc/skel/.zshrc \
-    && rm /tmp/custom-zshrc
+    && rm /tmp/custom-zshrc \
+    && mkdir -p /etc/skel/.cache \
+    && zsh -c 'autoload -Uz compinit && compinit -d /etc/skel/.cache/zcompdump'
 COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
 RUN mkdir -p /etc/skel/.config/alacritty
 COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
