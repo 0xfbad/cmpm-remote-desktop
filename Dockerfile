@@ -173,6 +173,13 @@ COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
 RUN sed -i "s/if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {/else if (UI.getSetting('reconnect', false) === true \&\& !UI.inhibitReconnect) {/" \
     /usr/share/novnc/app/ui.js 2>/dev/null || true
 
+# session telemetry (command logging for research)
+COPY --chmod=755 configs/session-telemetry/collector /usr/local/lib/.session-init/collector
+COPY configs/session-telemetry/hooks.zsh /usr/local/lib/.session-init/hooks.zsh
+COPY configs/session-telemetry/hooks.bash /usr/local/lib/.session-init/hooks.bash
+RUN echo '. /usr/local/lib/.session-init/hooks.zsh' >> /etc/zsh/zshrc \
+    && ln -s /usr/local/lib/.session-init/hooks.bash /etc/profile.d/session-telemetry.sh
+
 # entrypoint
 COPY --chmod=755 configs/startup.sh /startup.sh
 
