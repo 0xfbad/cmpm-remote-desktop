@@ -56,6 +56,11 @@ websockify --web /usr/share/novnc 6080 localhost:5900 &
 until [ -e /tmp/.X11-unix/X0 ]; do sleep 0.1; done
 until curl -fs localhost:6080 >/dev/null; do sleep 0.1; done
 
+# no screen blanking or dpms in a vnc container
+xset s off
+xset s noblank
+xset -dpms
+
 su - "$USERNAME" -c "
     export DISPLAY=$DISPLAY
     exec dbus-launch --exit-with-session xfce4-session
