@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 # layer 2 - security tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
