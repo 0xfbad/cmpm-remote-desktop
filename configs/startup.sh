@@ -27,6 +27,10 @@ if ! id -u "$USERNAME" >/dev/null 2>&1; then
 	su - "$USERNAME" -c "tldr --update" || true
 fi
 
+# set user password for ssh access (uses same password as vnc)
+SSH_PASS="${VNC_PASSWORD:-$(openssl rand -base64 6)}"
+echo "$USERNAME:$SSH_PASS" | chpasswd
+
 DUMPCAP=$(command -v dumpcap 2>/dev/null)
 if [ -n "$DUMPCAP" ]; then
 	setcap cap_net_raw,cap_net_admin=ep "$DUMPCAP"
@@ -57,6 +61,15 @@ Xvnc $DISPLAY \
 	-depth 24 &
 
 websockify --web /usr/share/novnc 6080 localhost:5900 &
+
+# sshd for direct terminal access
+mkdir -p /run/sshd
+ssh-keygen -A
+printf '\nPermitRootLogin no\nAllowUsers %s\n' "$USERNAME" >> /etc/ssh/sshd_config
+/usr/sbin/sshd
+
+# web terminal for browser-based shell access
+ttyd -p 7682 -W -t fontSize=16 su -l "$USERNAME" &
 
 until [ -e /tmp/.X11-unix/X0 ]; do sleep 0.1; done
 until curl -fs localhost:6080 >/dev/null; do sleep 0.1; done

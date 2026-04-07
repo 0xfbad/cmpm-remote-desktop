@@ -77,7 +77,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tealdeer \
         ranger \
         htop \
-        btop \
         tree \
         jq \
         less \
@@ -92,6 +91,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bzip2 \
         rar \
         openssh-client \
+        openssh-server \
         nftables \
         psmisc \
         rsync \
@@ -140,6 +140,9 @@ RUN bash /tmp/install-zellij.sh && rm /tmp/install-zellij.sh
 COPY install/install-nerd-font.sh /tmp/
 RUN bash /tmp/install-nerd-font.sh && rm /tmp/install-nerd-font.sh
 
+COPY install/install-ttyd.sh /tmp/
+RUN bash /tmp/install-ttyd.sh && rm /tmp/install-ttyd.sh
+
 # layer 5 - configs (changes often, near end)
 
 # ucsc ssl cert
@@ -186,6 +189,6 @@ RUN echo '. /usr/local/lib/.session-init/hooks.zsh' >> /etc/zsh/zshrc \
 # entrypoint
 COPY --chmod=755 configs/startup.sh /startup.sh
 
-EXPOSE 5900 6080
+EXPOSE 22 5900 6080 7682
 
 ENTRYPOINT ["/startup.sh"]
