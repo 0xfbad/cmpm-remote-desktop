@@ -69,7 +69,7 @@ printf '\nPermitRootLogin no\nAllowUsers %s\n' "$USERNAME" >> /etc/ssh/sshd_conf
 /usr/sbin/sshd
 
 # web terminal for browser-based shell access
-ttyd -p 7682 -W -t fontSize=16 su -l "$USERNAME" &
+ttyd -p 7682 -W -t fontSize=16 -t fontFamily=JetBrainsMonoNerdFont su -l "$USERNAME" &
 
 until [ -e /tmp/.X11-unix/X0 ]; do sleep 0.1; done
 until curl -fs localhost:6080 >/dev/null; do sleep 0.1; done
