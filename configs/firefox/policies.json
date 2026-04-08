@@ -40,6 +40,11 @@
         "Placement": "toolbar"
       }
     ],
+    "WebsiteFilter": {
+      "Block": [
+        "*://*/remote-desktop*"
+      ]
+    },
     "Certificates": {
       "ImportEnterpriseRoots": true,
       "Install": [
