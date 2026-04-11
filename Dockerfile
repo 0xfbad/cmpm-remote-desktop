@@ -4,7 +4,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
 # layer 1 - desktop and vnc stack
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
         kali-desktop-xfce \
         xfce4-terminal \
         dbus-x11 \
@@ -28,7 +28,7 @@ ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
 # layer 2 - security tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
         ghidra \
         radare2 \
         rizin-cutter \
@@ -109,11 +109,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-hack \
         libedit-dev \
         libimage-exiftool-perl \
+        xxd \
+        iputils-ping \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/lib/python3/dist-packages/Cryptodome /usr/lib/python3/dist-packages/Crypto
 
 # layer 3 - kali metapackages (web, forensics, stego)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
         kali-tools-web \
         kali-tools-forensics \
         kali-tools-crypto-stego \
