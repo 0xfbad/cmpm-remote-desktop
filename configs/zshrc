@@ -45,4 +45,4 @@ eval "$(zoxide init zsh --cmd cd)"
 # fzf
 source <(fzf --zsh 2>/dev/null || true)
 
-PROMPT=$'\n%F{green}%n@%m%f %F{blue}%(4~|%-1~/.../%2~|%3~)%f\n%F{red}$%f '
+PROMPT=$'%F{green}%n@%m%f %F{blue}%(4~|%-1~/.../%2~|%3~)%f\n%F{red}$%f '
