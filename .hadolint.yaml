@@ -2,3 +2,4 @@
 ignored:
   - DL3006  # always tag image version
   - DL3008  # pin versions in apt-get
+  - DL3015  # kali metapackages need recommended deps
