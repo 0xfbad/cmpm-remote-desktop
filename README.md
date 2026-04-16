@@ -6,8 +6,11 @@ Browser-accessible Kali Linux desktop for the CMPM 17 security course, students 
 
 ```bash
 docker build -t ctfd-remote-desktop .
+docker builder prune --keep-storage=5G -f
 docker run --rm -p 6080:6080 -p 7682:7682 -p 2222:22 -e CTFD_USERNAME=testuser -e VNC_PASSWORD=testpass ctfd-remote-desktop
 ```
+
+The prune step trims the build cache after each build. The image is ~15GB so cache grows fast without it
 
 - Desktop: `http://localhost:6080/vnc.html?autoconnect=true&password=testpass`
 - Terminal: `http://localhost:7682`
