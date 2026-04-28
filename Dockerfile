@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y \
         rizin-cutter \
         imhex \
         binwalk \
+        stegseek \
         afl++ \
         exploitdb \
         nasm \
@@ -68,11 +69,15 @@ RUN apt-get update && apt-get install -y \
         emacs-nox \
         nano \
         gedit \
+        ed \
+        hexedit \
         tmux \
         screen \
         fzf \
         eza \
         zoxide \
+        ripgrep \
+        sd \
         zsh-syntax-highlighting \
         tealdeer \
         ranger \
@@ -95,6 +100,7 @@ RUN apt-get update && apt-get install -y \
         nftables \
         psmisc \
         rsync \
+        magic-wormhole \
         file \
         man-db \
         firefox-esr \
@@ -103,6 +109,7 @@ RUN apt-get update && apt-get install -y \
         feh \
         lolcat \
         mpv \
+        audacity \
         nyancat \
         wordlists \
         fonts-jetbrains-mono \
