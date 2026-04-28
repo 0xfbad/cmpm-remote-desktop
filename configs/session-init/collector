@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""collects shell telemetry via unix datagram socket, writes to append-only log"""
+"""receives session events on a unix datagram socket, appends to log"""
 import os
 import sys
 import signal

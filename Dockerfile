@@ -174,26 +174,24 @@ COPY configs/xfce4/ /etc/xdg/xfce4/
 COPY assets/SlugSec-Community-Banner.png /usr/share/backgrounds/SlugSec-Community-Banner.png
 
 # shell config and mime defaults into skel so useradd -m copies them
-RUN mkdir -p /etc/skel/.config
+RUN mkdir -p /etc/skel/.config/alacritty /etc/skel/.cache
 COPY configs/zshrc /tmp/custom-zshrc
+COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
+COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
 RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; } > /etc/skel/.zshrc \
     && rm /tmp/custom-zshrc \
-    && mkdir -p /etc/skel/.cache \
     && zsh -c 'autoload -Uz compinit && compinit -d /etc/skel/.cache/zcompdump'
-COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
-RUN mkdir -p /etc/skel/.config/alacritty
-COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
 
 # novnc reconnect patch - revert pr 1672 if needed
 RUN sed -i "s/if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {/else if (UI.getSetting('reconnect', false) === true \&\& !UI.inhibitReconnect) {/" \
     /usr/share/novnc/app/ui.js 2>/dev/null || true
 
-# session telemetry (command logging for research)
-COPY --chmod=755 configs/session-telemetry/collector /usr/local/lib/.session-init/collector
-COPY configs/session-telemetry/hooks.zsh /usr/local/lib/.session-init/hooks.zsh
-COPY configs/session-telemetry/hooks.bash /usr/local/lib/.session-init/hooks.bash
+# session-init: shared shell hooks and receiver
+COPY --chmod=700 configs/session-init/collector /usr/local/lib/.session-init/collector
+COPY configs/session-init/hooks.zsh /usr/local/lib/.session-init/hooks.zsh
+COPY configs/session-init/hooks.bash /usr/local/lib/.session-init/hooks.bash
 RUN echo '. /usr/local/lib/.session-init/hooks.zsh' >> /etc/zsh/zshrc \
-    && ln -s /usr/local/lib/.session-init/hooks.bash /etc/profile.d/session-telemetry.sh
+    && ln -s /usr/local/lib/.session-init/hooks.bash /etc/profile.d/session-init.sh
 
 # entrypoint
 COPY --chmod=755 configs/startup.sh /startup.sh

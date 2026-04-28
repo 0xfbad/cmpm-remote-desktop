@@ -1,6 +1,5 @@
-# shell session telemetry
-# sends command data to collector via unix datagram socket
-# no-op if the collector socket doesn't exist
+# zsh interactive session hook
+# no-op if the receiver socket doesn't exist
 
 [[ -S /run/.session-init.sock ]] || return 0
 

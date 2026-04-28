@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 pip install --break-system-packages keystone-engine unicorn capstone ropper
 

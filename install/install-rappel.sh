@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 git clone --depth 1 https://github.com/yrp604/rappel.git /tmp/rappel
 make -C /tmp/rappel

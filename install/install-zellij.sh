@@ -1,11 +1,15 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 ZELLIJ_URL=$(curl -sfL https://api.github.com/repos/zellij-org/zellij/releases/latest |
   grep '"browser_download_url"' |
   grep 'x86_64-unknown-linux-musl\.tar\.gz' |
   head -1 |
   cut -d '"' -f 4)
+[ -n "$ZELLIJ_URL" ] || {
+  echo "no zellij release url found" >&2
+  exit 1
+}
 
 curl -fLo /tmp/zellij.tar.gz "$ZELLIJ_URL"
 tar xf /tmp/zellij.tar.gz -C /usr/local/bin zellij

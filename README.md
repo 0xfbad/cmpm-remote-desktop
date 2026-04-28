@@ -29,7 +29,7 @@ The startup script (`configs/startup.sh`) handles first-run setup, it creates th
 | `CTFD_USERNAME` | `user` | CTFd display name, sanitized to lowercase alphanumeric with underscores and used as the linux account name |
 | `VNC_PASSWORD` | random 8 chars | Shared password for VNC auth, SSH login, and the linux user account |
 | `RESOLUTION` | `1920x1080` | VNC display resolution |
-| `SHELL_LOGGING` | unset | Set to `1` to enable command telemetry collection |
+| `SHELL_LOGGING` | unset | Set to `1` to enable session logging |
 
 ## Ports
 
