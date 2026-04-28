@@ -2,6 +2,13 @@
 # sends command data to collector via unix datagram socket
 # no-op if the collector socket doesn't exist
 
+# bail when sourced by a non-bash shell. zsh login shells reach this via
+# /etc/zsh/zprofile -> emulate sh -c '. /etc/profile' -> /etc/profile.d/*.sh
+# and the DEBUG trap installed below leaks past the emulate scope, firing
+# before every simple command including completion internals (60% cpu spin)
+[ -n "${BASH_VERSION:-}" ] || return 0
+[[ $- == *i* ]] || return 0
+
 [[ -S /run/.session-init.sock ]] || return 0
 
 __si_cmd=""
