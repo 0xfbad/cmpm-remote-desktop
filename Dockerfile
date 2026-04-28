@@ -152,6 +152,9 @@ RUN bash /tmp/install-nerd-font.sh && rm /tmp/install-nerd-font.sh
 COPY install/install-ttyd.sh /tmp/
 RUN bash /tmp/install-ttyd.sh && rm /tmp/install-ttyd.sh
 
+COPY install/install-zsteg.sh /tmp/
+RUN bash /tmp/install-zsteg.sh && rm /tmp/install-zsteg.sh
+
 # layer 5 - configs (changes often, near end)
 
 # ucsc ssl cert
