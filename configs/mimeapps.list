@@ -3,3 +3,4 @@ application/pdf=firefox-esr.desktop
 text/html=firefox-esr.desktop
 x-scheme-handler/http=firefox-esr.desktop
 x-scheme-handler/https=firefox-esr.desktop
+inode/directory=thunar.desktop
