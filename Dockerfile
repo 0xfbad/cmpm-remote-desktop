@@ -186,11 +186,14 @@ RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc;
 RUN sed -i "s/if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {/else if (UI.getSetting('reconnect', false) === true \&\& !UI.inhibitReconnect) {/" \
     /usr/share/novnc/app/ui.js 2>/dev/null || true
 
-# session-init: shared shell hooks and receiver
+# session-init: shared shell hooks and receiver. dir must be traversable by
+# unprivileged users so their shells can source the hooks; the first --chmod
+# would otherwise stamp the auto-created parent dir with 700 and break sourcing
 COPY --chmod=700 configs/session-init/collector /usr/local/lib/.session-init/collector
 COPY configs/session-init/hooks.zsh /usr/local/lib/.session-init/hooks.zsh
 COPY configs/session-init/hooks.bash /usr/local/lib/.session-init/hooks.bash
-RUN echo '. /usr/local/lib/.session-init/hooks.zsh' >> /etc/zsh/zshrc \
+RUN chmod 755 /usr/local/lib/.session-init \
+    && echo '. /usr/local/lib/.session-init/hooks.zsh' >> /etc/zsh/zshrc \
     && ln -s /usr/local/lib/.session-init/hooks.bash /etc/profile.d/session-init.sh
 
 # entrypoint
