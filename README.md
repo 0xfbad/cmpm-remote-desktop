@@ -30,6 +30,9 @@ The startup script (`configs/startup.sh`) handles first-run setup, it creates th
 | `VNC_PASSWORD` | random 8 chars | Shared password for VNC auth, SSH login, and the linux user account |
 | `RESOLUTION` | `1920x1080` | VNC display resolution |
 | `SHELL_LOGGING` | unset | Set to `1` to enable session logging |
+| `CTFD_URL` | unset | Public CTFd URL, used as the autologin cookie's domain and the Firefox homepage |
+| `CTFD_COOKIE_NAME` | unset | CTFd session cookie name, usually `session` |
+| `CTFD_COOKIE_VALUE` | unset | Signed session cookie value, injected into Firefox at startup |
 
 ## Ports
 
@@ -119,6 +122,10 @@ The zshrc is Kali's stock `newuser.zshrc.recommended` with our stuff appended at
 ## Firefox
 
 Enterprise policies set the homepage to the challenge server, add toolbar bookmarks for Challenges, SlugSec, and CyberChef, import the UCSC SSL certificate, and clean up the new tab page. Kali's default OffSec bookmarks get replaced by a stripped `distribution.ini`. There's also an autoconfig layer (`firefox.cfg`) that uses `lockPref` to force settings that the policy engine doesn't reliably apply, things like the sandbox warning, devtools tab visibility, and Firefox View
+
+### Autologin
+
+With `CTFD_URL` and `CTFD_COOKIE_VALUE` set (the CTFd plugin sets them per-user), startup.sh stages the cookie at `/tmp/ctfd_auth.json` and rewrites the homepage in policies.json to point at the same URL. Firefox's autoconfig reads the file on launch, calls `Services.cookies.add`, and deletes the staging file. Errors go to `/tmp/ctfd_inject.log`
 
 ## Adding tools
 

@@ -101,6 +101,27 @@ xset s off
 xset s noblank
 xset -dpms
 
+# pass session cookie + url to firefox.cfg via /tmp/ctfd_auth.json, and
+# rewrite the static homepage in policies.json to match
+if [ -n "${CTFD_URL:-}" ]; then
+  for f in /usr/lib/firefox-esr/distribution/policies.json /usr/share/firefox-esr/distribution/policies.json; do
+    if [ -f "$f" ]; then
+      jq --arg url "${CTFD_URL%/}/challenges" '.policies.Homepage.URL = $url | (.policies.Bookmarks[] | select(.Title == "Challenges")).URL = $url' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+    fi
+  done
+fi
+
+if [ -n "${CTFD_COOKIE_VALUE:-}" ] && [ -n "${CTFD_URL:-}" ]; then
+  jq -n \
+    --arg url "$CTFD_URL" \
+    --arg name "${CTFD_COOKIE_NAME:-session}" \
+    --arg value "$CTFD_COOKIE_VALUE" \
+    '{url: $url, name: $name, value: $value}' \
+    >/tmp/ctfd_auth.json
+  chown "$USERNAME:$USERNAME" /tmp/ctfd_auth.json
+  chmod 600 /tmp/ctfd_auth.json
+fi
+
 su - "$USERNAME" -c "
     export DISPLAY=$DISPLAY
     exec dbus-launch --exit-with-session xfce4-session
