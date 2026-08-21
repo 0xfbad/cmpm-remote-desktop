@@ -74,16 +74,21 @@ Xvnc $DISPLAY \
 
 websockify --web /usr/share/novnc 6080 localhost:5900 &
 
-# sshd for direct terminal access
-mkdir -p /run/sshd
-ssh-keygen -A
-# guarded so the file doesn't grow on container restart
-grep -q '^AllowUsers' /etc/ssh/sshd_config ||
-  printf '\nPermitRootLogin no\nAllowUsers %s\n' "$USERNAME" >>/etc/ssh/sshd_config
-/usr/sbin/sshd
+# sshd for direct terminal access. ENABLE_SSH=0 disables (plugin toggle);
+# absent or any other value keeps it on for plain docker-run users
+if [ "${ENABLE_SSH:-1}" != "0" ]; then
+  mkdir -p /run/sshd
+  ssh-keygen -A
+  # guarded so the file doesn't grow on container restart
+  grep -q '^AllowUsers' /etc/ssh/sshd_config ||
+    printf '\nPermitRootLogin no\nAllowUsers %s\n' "$USERNAME" >>/etc/ssh/sshd_config
+  /usr/sbin/sshd
+fi
 
-# web terminal for browser-based shell access
-ttyd -p 7682 -W -t fontSize=16 -t fontFamily=JetBrainsMonoNerdFont su -l "$USERNAME" &
+# web terminal for browser-based shell access. ENABLE_TTYD=0 disables
+if [ "${ENABLE_TTYD:-1}" != "0" ]; then
+  ttyd -p 7682 -W -t fontSize=16 -t fontFamily=JetBrainsMonoNerdFont su -l "$USERNAME" &
+fi
 
 # wait up to 30s for Xvnc and websockify; bail if either never comes up
 for _ in $(seq 1 300); do
