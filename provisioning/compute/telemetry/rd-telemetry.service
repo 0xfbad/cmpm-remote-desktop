@@ -1,0 +1,9 @@
+[Unit]
+Description=rd cgroup telemetry snapshot
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/rd-telemetry.sh
+TimeoutStartSec=45s

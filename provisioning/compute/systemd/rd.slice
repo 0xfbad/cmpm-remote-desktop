@@ -1,0 +1,23 @@
+# Installed to /etc/systemd/system/rd.slice by install.sh.
+# Parent cgroup for all remote-desktop session containers
+# (docker run --cgroup-parent rd.slice).
+
+[Unit]
+Description=Remote desktop session containers (ctfd-remote-desktop)
+Before=slices.target
+
+[Slice]
+CPUWeight=50
+IOWeight=50
+MemoryHigh=70%
+MemoryMax=90%
+MemorySwapMax=0
+# TasksMax: the handoff said 12288, but the admission cap (5-7 sessions) x
+# pids_limit 4096 = 20480-28672 exceeds that, so two fork-bombing students
+# would starve innocent sessions' forks at the slice -- the same
+# shared-counter failure the handoff rejects nproc for. 32768 still leaves
+# ~98k pids of host headroom under kernel.pid_max=131072.
+TasksMax=32768
+
+[Install]
+WantedBy=slices.target
