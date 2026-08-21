@@ -1,0 +1,18 @@
+# Bridge-family assertion: no L2 forwarding between ports on any rd pool
+# bridge (rdb*). A correctly-provisioned rd bridge has exactly one port
+# (the single session container), so this rule only fires on
+# misconfiguration -- a nonzero counter here means two endpoints landed on
+# one bridge.
+#
+# NOTE: this also blocks a future same-student target box placed on the same
+# network. When target boxes ship, relax this to an ibrname/obrname-paired
+# rule instead of the blanket ibrname drop.
+#
+# Chain is named rd_fwd deliberately: `fwd` is an nft keyword and does not
+# parse ("syntax error, unexpected fwd") -- do not rename it back.
+table bridge rd_iso {
+    chain rd_fwd {
+        type filter hook forward priority -300; policy accept;
+        meta ibrname "rdb*" counter drop
+    }
+}

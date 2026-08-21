@@ -1,0 +1,52 @@
+# Egress ACL template for remote-desktop session containers (iifname rdb*).
+# TEMPLATE: fill the defines with per-site values before loading (install.sh
+# does NOT load this file by default -- see the rd_input note below).
+#
+# Layering: docker's DOCKER-ISOLATION chains are the first layer of
+# inter-bridge isolation; this table is the site egress policy on top.
+#
+# "sensei pulls, never pushes" -- CTFd 443/80 is the ONLY container->CTFd
+# path; nothing else from a session may reach CTFd or the management plane.
+#
+# The DNS carve-out is the most likely day-one outage -- do not skip it.
+# Wrong DNS_SERVERS (or wrong CTFD_HOST) breaks autologin, apt, and the
+# sensei pull path all at once.
+#
+# NOT loaded on dev: the rd_input chain drops new container->host
+# connections, which is correct on prod but breaks the dev host-gateway
+# CTFd topology.
+#
+# Chains are named rd_fwd/rd_input deliberately: `fwd` is an nft keyword and
+# does not parse -- do not rename them back.
+
+define CTFD_HOST = { 192.0.2.10 }                       # REPLACE: CTFd server IP(s)
+define DNS_SERVERS = { 192.0.2.53 }                     # REPLACE: site resolvers
+define NTP_SERVERS = { 192.0.2.123 }                    # REPLACE: site NTP
+define APT_MIRRORS = { 192.0.2.80 }                     # REPLACE: apt mirror IPs
+# REPLACE: subnets of in-scope challenge/target boxes students may attack
+# (e.g. the challenge-containers stack networks). Without this, the
+# BLOCKED_DST rule below drops nmap/nc to on-platform RFC1918 targets. nft
+# rejects an empty set -- if all challenge targets are public/internet-side,
+# delete this define AND its accept rule in rd_fwd rather than emptying it.
+define CHALLENGE_TARGETS = { 198.51.100.0/24 }          # REPLACE (placeholder)
+# REPLACE: RFC1918 + runner LAN CIDRs + campus management CIDRs
+define BLOCKED_DST = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }
+
+table ip rd_egress {
+    chain rd_fwd {
+        type filter hook forward priority -5; policy accept;
+        iifname "rdb*" ct state established,related accept
+        iifname "rdb*" ip daddr $CHALLENGE_TARGETS accept
+        iifname "rdb*" ip daddr $CTFD_HOST tcp dport { 80, 443 } accept
+        iifname "rdb*" ip daddr $DNS_SERVERS meta l4proto { tcp, udp } th dport 53 accept
+        iifname "rdb*" ip daddr $NTP_SERVERS udp dport 123 accept
+        iifname "rdb*" ip daddr $APT_MIRRORS tcp dport { 80, 443 } accept
+        iifname "rdb*" ip daddr $BLOCKED_DST counter drop
+    }
+
+    chain rd_input {
+        type filter hook input priority -5; policy accept;
+        iifname "rdb*" ct state established,related accept
+        iifname "rdb*" ct state new counter drop
+    }
+}

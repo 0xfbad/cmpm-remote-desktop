@@ -1,0 +1,22 @@
+# Disable IPv6 on the rd pool bridges (rdb*). Belt-and-suspenders: docker
+# bridge networks here are IPv4-only and single-tenant networks make
+# RA-spoofing peer-less anyway, but this closes the class outright.
+#
+# PartOf=docker.service so a manual `systemctl restart docker` re-runs this
+# unit -- dockerd recreates the bridges on restart and the per-interface
+# sysctls would otherwise be silently lost.
+[Unit]
+Description=Disable IPv6 on remote-desktop pool bridges (rdb*)
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The [ -e ] guard prevents a hard unit failure when the glob matches nothing
+# (e.g. before net-pool.sh has run).
+ExecStart=/bin/sh -c 'for f in /proc/sys/net/ipv6/conf/rdb*/disable_ipv6; do [ -e "$f" ] || continue; echo 1 > "$f"; done'
+
+[Install]
+WantedBy=multi-user.target
