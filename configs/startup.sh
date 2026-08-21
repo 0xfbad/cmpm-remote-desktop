@@ -22,16 +22,23 @@ USERNAME=$(echo "${CTFD_USERNAME:-user}" | tr '[:upper:]' '[:lower:]' | sed 's/[
 # fallback if empty after sanitization
 USERNAME="${USERNAME:-user}"
 
+# sets USER_SHELL (tlog-rec-session when TLOG_ENABLED=1, else zsh) and patches
+# the skel configs that hardcode a shell. must run before useradd copies skel
+. /usr/local/lib/setup-recording.sh
+
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
-  useradd -m -s /bin/zsh "$USERNAME"
+  useradd -m -s "$USER_SHELL" "$USERNAME"
   echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >>/etc/sudoers
 
-  su - "$USERNAME" -c "mkdir -p ~/Downloads"
+  # -s /bin/bash routes root's bootstrap su calls around the passwd shell:
+  # they must not run under tlog (a no-tty 2.5h "session") and must not be
+  # blocked by the /etc/shells trim
+  su -l -s /bin/bash "$USERNAME" -c "mkdir -p ~/Downloads"
 
   chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
   chmod 755 "/home/$USERNAME"
 
-  su - "$USERNAME" -c "tldr --update" || true
+  su -l -s /bin/bash "$USERNAME" -c "tldr --update" || true
 fi
 
 # shared password for the linux user, ssh, and vnc. compute once so a missing
@@ -122,7 +129,11 @@ if [ -n "${CTFD_COOKIE_VALUE:-}" ] && [ -n "${CTFD_URL:-}" ]; then
   chmod 600 /tmp/ctfd_auth.json
 fi
 
-su - "$USERNAME" -c "
+# -s /bin/bash bypasses the passwd shell for the session bootstrap itself, but
+# SHELL must then be re-exported to the real user shell: GUI terminals that
+# consult \$SHELL (alacritty et al) would otherwise spawn unrecorded bash
+su -l -s /bin/bash "$USERNAME" -c "
+    export SHELL=$USER_SHELL
     export DISPLAY=$DISPLAY
     exec dbus-launch --exit-with-session xfce4-session
 "

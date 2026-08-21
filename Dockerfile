@@ -42,7 +42,6 @@ RUN apt-get update && apt-get install -y \
         netcat-openbsd \
         tcpdump \
         wireshark \
-        termshark \
         socat \
         burpsuite \
         gdb \
@@ -112,7 +111,6 @@ RUN apt-get update && apt-get install -y \
         audacity \
         nyancat \
         wordlists \
-        fonts-jetbrains-mono \
         fonts-hack \
         libedit-dev \
         libimage-exiftool-perl \
@@ -154,6 +152,9 @@ RUN bash /tmp/install-ttyd.sh && rm /tmp/install-ttyd.sh
 
 COPY install/install-zsteg.sh /tmp/
 RUN bash /tmp/install-zsteg.sh && rm /tmp/install-zsteg.sh
+
+# session recorder (own layer so adding it doesn't invalidate the big apt layers)
+RUN apt-get update && apt-get install -y tlog && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # layer 5 - configs (changes often, near end)
 
@@ -198,6 +199,12 @@ COPY configs/session-init/hooks.bash /usr/local/lib/.session-init/hooks.bash
 RUN chmod 755 /usr/local/lib/.session-init \
     && echo '. /usr/local/lib/.session-init/hooks.zsh' >> /etc/zsh/zshrc \
     && ln -s /usr/local/lib/.session-init/hooks.bash /etc/profile.d/session-init.sh
+
+# session recording. no tlog group repair and no /run/tlog tmpfiles needed:
+# writer=syslog uses no file paths, and /run/tlog must stay absent (its
+# audit-sid lockfile would limit recording to the first terminal) - don't "fix"
+COPY configs/tlog/tlog-rec-session.conf /etc/tlog/tlog-rec-session.conf
+COPY --chmod=755 configs/setup-recording.sh /usr/local/lib/setup-recording.sh
 
 # entrypoint
 COPY --chmod=755 configs/startup.sh /startup.sh

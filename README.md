@@ -29,7 +29,10 @@ The startup script (`configs/startup.sh`) handles first-run setup, it creates th
 | `CTFD_USERNAME` | `user` | CTFd display name, sanitized to lowercase alphanumeric with underscores and used as the linux account name |
 | `VNC_PASSWORD` | random 8 chars | Shared password for VNC auth, SSH login, and the linux user account |
 | `RESOLUTION` | `1920x1080` | VNC display resolution |
-| `SHELL_LOGGING` | unset | Set to `1` to enable session logging |
+| `SHELL_LOGGING` | unset | Set to `1` to enable the advisory command-log collector |
+| `ENABLE_SSH` | unset (on) | Set to `0` to not start sshd at all; absent or any other value keeps it on |
+| `ENABLE_TTYD` | unset (on) | Set to `0` to not start the ttyd web terminal; absent or any other value keeps it on |
+| `TLOG_ENABLED` | unset | Set to `1` to make `tlog-rec-session` the user's login shell, recording terminal output (never keystrokes) to `/dev/log`. Bind-mount the host collector socket to `/dev/log` or transcripts are dropped |
 | `CTFD_URL` | unset | Public CTFd URL, used as the autologin cookie's domain and the Firefox homepage |
 | `CTFD_COOKIE_NAME` | unset | CTFd session cookie name, usually `session` |
 | `CTFD_COOKIE_VALUE` | unset | Signed session cookie value, injected into Firefox at startup |
