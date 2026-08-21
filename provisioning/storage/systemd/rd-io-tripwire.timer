@@ -1,0 +1,10 @@
+[Unit]
+Description=rd io tripwire 5s cadence
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=rd session IO tripwire (pauses runaway writers, preserves evidence)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=20s
+EnvironmentFile=-/etc/default/rd-io-tripwire
+ExecStart=/usr/local/lib/rd-io-tripwire.sh

@@ -1,0 +1,9 @@
+{
+  "_comment": "Reference fragment only. install.sh merges these keys into /etc/docker/daemon.json with jq; unrelated keys (e.g. default-address-pools, owned by the network provisioning) are preserved. The storage-opts entry below is RUNNER-ONLY: injected by install.sh --with-storage-opts, never on the ext4 dev box (rename _storage-opts -> storage-opts is done by the installer, not by copying this file).",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "50m",
+    "max-file": "3"
+  },
+  "_storage-opts": ["overlay2.size=20G"]
+}

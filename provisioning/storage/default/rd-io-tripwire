@@ -1,0 +1,18 @@
+# rd-io-tripwire configuration (sampled every 5s by rd-io-tripwire.timer).
+
+# Sustained write rate (bytes/s) that counts as a strike; CONSEC strikes pause.
+RATE_TRIP_BYTES=209715200
+CONSEC=3
+STATE_DIR=/run/rd-io-tripwire
+LOG_DIR=/var/log/rd-tripwire
+NAME_PREFIX=rd-session-
+# PAUSE_ENABLE=0 -> detect-only (log, never pause).
+PAUSE_ENABLE=1
+IHARD_ENABLE=1
+IHARD=2000000
+DATA_ROOT=/var/lib/docker
+
+# The script resolves io.stat under /sys/fs/cgroup/rd.slice first, then
+# system.slice, then a glob across all slices — so it tracks whatever slice
+# feature 3 lands (rd.slice). The slice name is a decide-once shared
+# constant; if feature 3 renames it, update it there once, not here.
