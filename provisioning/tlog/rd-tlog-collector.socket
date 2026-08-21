@@ -1,0 +1,16 @@
+# socket activation is both the race fix and the restart fix: systemd holds
+# the fd across collector crashes/restarts so the bind-mounted inode stays
+# live for running sessions. NEVER `systemctl restart rd-tlog-collector.socket`
+# while sessions run (re-bind replaces the inode; containers keep the dead one
+# and silently lose transcripts until session end). restart the .service freely.
+[Unit]
+Description=rd-tlog collector socket (per-session terminal transcripts)
+
+[Socket]
+ListenDatagram=/run/rd-tlog/log.sock
+PassCredentials=yes
+SocketMode=0666
+ReceiveBuffer=8M
+
+[Install]
+WantedBy=sockets.target

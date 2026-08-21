@@ -1,0 +1,7 @@
+[Unit]
+Description=purge rd-tlog transcripts past retention
+
+[Service]
+Type=oneshot
+# shell wrapper is required for the env-default expansion
+ExecStart=/bin/sh -c 'find /var/lib/rd-tlog/sessions -type f -mtime +${RD_TLOG_RETENTION_DAYS:-60} -delete'
