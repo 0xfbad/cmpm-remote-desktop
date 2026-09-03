@@ -1,9 +1,28 @@
 [Unit]
 Description=rd cgroup telemetry snapshot
+# A timer firing while Docker is intentionally down must not start it. After=
+# is ordering-only; keep Requires=/Wants= absent.
 After=docker.service
-Requires=docker.service
 
 [Service]
 Type=oneshot
+# Check service state before the telemetry script can contact docker.socket and
+# trigger socket activation.
+ExecCondition=/usr/bin/systemctl --quiet is-active docker.service
 ExecStart=/usr/local/lib/rd-telemetry.sh
 TimeoutStartSec=45s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rd-telemetry
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN

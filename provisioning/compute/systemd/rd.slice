@@ -11,7 +11,10 @@ CPUWeight=50
 IOWeight=50
 MemoryHigh=70%
 MemoryMax=90%
-MemorySwapMax=0
+# Aggregate burst cushion. memory.swap.max is hierarchical, so zero here made
+# the plugin's documented per-session swap limits ineffective. 25% bounds
+# total session swap while retaining a real buffer for browser/GUI spikes.
+MemorySwapMax=25%
 # TasksMax: the handoff said 12288, but the admission cap (5-7 sessions) x
 # pids_limit 4096 = 20480-28672 exceeds that, so two fork-bombing students
 # would starve innocent sessions' forks at the slice -- the same
