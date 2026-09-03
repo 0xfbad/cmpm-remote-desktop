@@ -18,6 +18,7 @@ apt-get install -y --no-install-recommends \
   patch
 
 curl --proto '=https' --tlsv1.2 -fsSL \
+  --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
   "https://github.com/tsl0922/ttyd/archive/refs/tags/${TTYD_VERSION}.tar.gz" \
   -o "$SOURCE"
 echo "$TTYD_SOURCE_SHA256  $SOURCE" | sha256sum -c -

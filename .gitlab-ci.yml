@@ -66,6 +66,7 @@ image-and-network-e2e:
     - bash tests/smoke-connection-toggles.sh ctfd-remote-desktop:ci
     - bash tests/smoke-tlog.sh ctfd-remote-desktop:ci
     - bash tests/smoke-runtime-hardening.sh ctfd-remote-desktop:ci
+    - bash tests/smoke-workspace-context.sh ctfd-remote-desktop:ci
     - bash tests/privileged-telemetry-e2e.sh
     - bash tests/privileged-storage-e2e.sh
     - bash tests/privileged-tlog-store-e2e.sh

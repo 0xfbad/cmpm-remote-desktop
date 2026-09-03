@@ -1,6 +1,3 @@
-# The base is digest-pinned; keep DL3006 ignored for hadolint versions that
-# still require a human-readable tag alongside an immutable digest.
 ignored:
-  - DL3006  # always tag image version
   - DL3008  # pin versions in apt-get
   - DL3015  # kali metapackages need recommended deps

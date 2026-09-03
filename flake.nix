@@ -26,9 +26,21 @@
       checks = eachSystem (
         pkgs:
         let
+          # Single source of truth for the ttyd pin: install-ttyd.sh. Duplicating
+          # it here let the patch check dry-run a different tarball than the
+          # image builds.
+          ttydInstaller = builtins.readFile ./install/install-ttyd.sh;
+          ttydPin =
+            re: what:
+            let
+              m = builtins.match re ttydInstaller;
+            in
+            if m == null then throw "install-ttyd.sh: cannot extract ${what}" else builtins.head m;
+          ttydVersion = ttydPin ".*\nTTYD_VERSION=([^\n]+)\n.*" "TTYD_VERSION";
+          ttydSha256 = ttydPin ".*\nTTYD_SOURCE_SHA256=([0-9a-f]{64})\n.*" "TTYD_SOURCE_SHA256";
           ttydSource = pkgs.fetchurl {
-            url = "https://github.com/tsl0922/ttyd/archive/refs/tags/1.7.7.tar.gz";
-            hash = "sha256-A53ZlSKTd8rukZiYt71USErM7Du6ScEY4tXNbsUeNlA=";
+            url = "https://github.com/tsl0922/ttyd/archive/refs/tags/${ttydVersion}.tar.gz";
+            sha256 = ttydSha256;
           };
         in
         {
@@ -38,6 +50,24 @@
             hadolint --config ${self}/.hadolint.yaml ${self}/Dockerfile.kasm
             touch $out
           '';
+          # xfconf silently drops a malformed channel and firefox silently ignores
+          # malformed policy JSON, so a typo degrades the desktop with a green
+          # pipeline. Parse them at check time instead.
+          config-validation =
+            pkgs.runCommand "config-validation"
+              {
+                nativeBuildInputs = [
+                  pkgs.jq
+                  pkgs.libxml2
+                ];
+              }
+              ''
+                cd ${self}
+                find configs -name '*.xml' -exec xmllint --noout {} +
+                jq -e . configs/firefox/policies.json >/dev/null
+                jq -e . configs/tlog/tlog-rec-session.conf >/dev/null
+                touch $out
+              '';
           script-validation =
             pkgs.runCommand "script-validation"
               {
@@ -55,7 +85,11 @@
                   shellcheck -x -P "$PWD" "$script"
                 done < <(find configs install provisioning tests -type f \
                   \( -name '*.sh' -o -name '*.bash' \) -print0)
-                zsh -n configs/zshrc configs/session-init/hooks.zsh
+                # zsh -n only parses its first argument; the rest become positional
+                # params. One invocation per file or the extra files go unchecked.
+                zsh -n configs/zshrc
+                zsh -n configs/session-init/hooks.zsh
+                zsh -n configs/workspace-capture.zsh
                 touch $out
               '';
           python-tests =
@@ -73,7 +107,8 @@
                 python3 -m py_compile \
                   provisioning/tlog/rd_tlog_collector.py \
                   tests/e2e-ttyd-websocket.py \
-                  tests/test_tlog_collector.py
+                  tests/test_tlog_collector.py \
+                  configs/session-init/collector
                 python3 tests/e2e-ttyd-websocket.py --help >/dev/null
                 pytest -q -p no:cacheprovider tests/test_tlog_collector.py
                 touch $out

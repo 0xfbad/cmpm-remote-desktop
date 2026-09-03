@@ -270,9 +270,20 @@ COPY --chmod=755 configs/setup-recording.sh /usr/local/lib/setup-recording.sh
 COPY --chmod=755 configs/startup.sh /startup.sh
 COPY --chmod=755 configs/healthcheck.sh /usr/local/bin/remote-desktop-healthcheck
 
+# Kali ships /usr/lib/nmap/nmap with cap_net_admin in its file-permitted set.
+# NET_ADMIN is not in the container bounding set, and for a capability-dumb
+# binary the kernel then fails execve outright, so nmap is unusable in every
+# session. Reduce to the caps the runtime actually grants. Keep cap_net_raw:
+# the /usr/bin/nmap wrapper always passes --privileged for non-root callers,
+# so stripping caps entirely would break the default student invocation
+# instead of fixing it. setcap normalizes the list alphabetically, which is
+# why the readback string is ordered differently from the argument.
 RUN dumpcap_path="$(command -v dumpcap)" \
     && setcap cap_net_raw=ep "$dumpcap_path" \
     && getcap "$dumpcap_path" | grep -Fqx "$dumpcap_path cap_net_raw=ep" \
+    && setcap cap_net_raw,cap_net_bind_service=ep /usr/lib/nmap/nmap \
+    && getcap /usr/lib/nmap/nmap \
+       | grep -Fqx '/usr/lib/nmap/nmap cap_net_bind_service,cap_net_raw=ep' \
     && test ! -s /etc/machine-id \
     && ! compgen -G '/etc/ssh/ssh_host_*_key*' >/dev/null
 

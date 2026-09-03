@@ -178,8 +178,25 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
     exit 0
   fi
 
+  # Warn the student before the session is torn down. Expiry TERMs Xvnc along
+  # with everything else, so GUI apps die from X-server loss with nothing
+  # saved; a toast is the only notice they get. Latched on the deadline value,
+  # not a boolean, because the plugin may rewrite the file to credit a hold --
+  # an extended session must warn again before its new deadline.
+  lifetime_warn() {
+    local minutes=$1 uid
+    # useradd runs after this function is forked, so the account may not exist
+    # yet. Failing to notify must never take the watchdog down with it.
+    uid=$(id -u -- "$USERNAME" 2>/dev/null) || return 0
+    [[ -n $uid ]] || return 0
+    su -l -s /bin/bash "$USERNAME" -c \
+      "DISPLAY=:0 notify-send -u critical 'Session ends in ${minutes} minutes'" \
+      >/dev/null 2>&1 || true
+  }
+
   lifetime_watchdog() {
-    local current_deadline now remaining sleep_for
+    local current_deadline now remaining sleep_for threshold
+    local -A warned_for=()
     trap - EXIT INT TERM
     while true; do
       # The plugin may credit a verified evidence-hold interval by replacing
@@ -200,6 +217,12 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
       current_deadline=$((10#$current_deadline))
       now=$(date +%s)
       remaining=$((current_deadline - now))
+      for threshold in 300 60; do
+        if ((remaining <= threshold)) && [[ ${warned_for[$threshold]:-} != "$current_deadline" ]]; then
+          warned_for[$threshold]=$current_deadline
+          lifetime_warn $((threshold / 60))
+        fi
+      done
       if ((remaining <= 0)); then
         kill -TERM "$startup_pid" 2>/dev/null || true
         return
@@ -311,7 +334,8 @@ fi
 # ENABLE_TTYD=0 disables the browser terminal.
 if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
   ttyd -p 7682 -W -O -m 16 -c "$USERNAME:$PASS" -t fontSize=16 \
-    -t fontFamily=JetBrainsMonoNerdFont su -l "$USERNAME" &
+    -t 'fontFamily=JetBrainsMono Nerd Font Mono, Menlo, Consolas, monospace' \
+    su -l "$USERNAME" &
   record_pid ttyd "$!"
 fi
 
@@ -333,9 +357,10 @@ done
   exit 1
 }
 
-# Disable screen blanking and DPMS in the VNC display.
+# Disable screen blanking in the VNC display. TigerVNC exposes no DPMS
+# extension, so -dpms is best effort and must not fail the chain.
 timeout 5 xdpyinfo -display "$DISPLAY" >/dev/null
-timeout 5 /bin/bash -c 'xset s off && xset s noblank && xset -dpms'
+timeout 5 /bin/bash -c 'xset s off && xset s noblank && { xset -dpms 2>/dev/null || true; }'
 
 # Pass the session cookie and URL to firefox.cfg and rewrite the static
 # homepage policy to match. Invalid policy JSON is a startup error.

@@ -20,6 +20,7 @@ download_gem() {
   path="$tmpdir/$name-$version.gem"
   curl --fail --location --silent --show-error \
     --proto '=https' --tlsv1.2 \
+    --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
     "https://rubygems.org/downloads/$name-$version.gem" \
     -o "$path"
   printf '%s  %s\n' "$expected_sha256" "$path" | sha256sum --check --status || {

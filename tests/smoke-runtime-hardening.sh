@@ -105,6 +105,42 @@ docker run --rm --entrypoint /bin/bash "$image" -c '
   test "$(find /usr/share/fonts/truetype/jetbrains-mono-nerd -maxdepth 1 -type f -name "*.ttf" | wc -l)" -eq 4
 '
 
+# The rest of the contract label names -- ports, health behaviour, stop signal --
+# was previously asserted only by reading the Dockerfile.
+echo "checking the declared contract surface, not just the label"
+# println per port so sort sees one field per line, then join without a
+# trailing separator -- ExposedPorts map order is not stable.
+[[ $(docker image inspect --format '{{ range $p, $_ := .Config.ExposedPorts }}{{ println $p }}{{ end }}' "$image" |
+  grep . | sort | paste -sd,) == "22/tcp,5900/tcp,6080/tcp,7682/tcp" ]]
+[[ $(docker image inspect --format '{{ .Config.StopSignal }}' "$image") == SIGTERM ]]
+[[ $(docker image inspect --format '{{ .Config.Healthcheck.Retries }}' "$image") == 3 ]]
+[[ $(docker image inspect --format '{{ .Config.Healthcheck.StartPeriod }}' "$image") == 3m0s ]]
+[[ $(docker image inspect --format '{{ .Config.Healthcheck.Interval }}' "$image") == 30s ]]
+
+# nmap ships from Kali with cap_net_admin in its file-permitted set, which the
+# container bounding set masks -- the kernel then refuses to exec it at all.
+# Assert both the capability and that it actually runs.
+echo "checking nmap is executable under the container capability set"
+docker run --rm --entrypoint /bin/bash "$image" -c '
+  set -euo pipefail
+  getcap /usr/lib/nmap/nmap | grep -Fqx "/usr/lib/nmap/nmap cap_net_bind_service,cap_net_raw=ep"
+  nmap --version >/dev/null
+'
+
+# An xfce helper value must name a helper file, or exo-open silently pops the
+# "Choose Preferred Application" chooser instead of opening the app.
+echo "checking xfce helper ids resolve to installed helpers"
+docker run --rm --entrypoint /bin/bash "$image" -c '
+  set -euo pipefail
+  while IFS="=" read -r key value; do
+    [[ -n ${key:-} && ${key:0:1} != "#" ]] || continue
+    test -f "/usr/share/xfce4/helpers/${value}.desktop" || {
+      echo "helpers.rc ${key}=${value} names no installed helper" >&2
+      exit 1
+    }
+  done < /etc/xdg/xfce4/helpers.rc
+'
+
 echo "checking strict VNC password validation"
 assert_password_rejected "$invalid_empty" ""
 assert_password_rejected "$invalid_long" ninechars
