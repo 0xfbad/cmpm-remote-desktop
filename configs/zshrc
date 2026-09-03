@@ -32,8 +32,10 @@ alias ip="ip --color=auto"
 # misc
 alias open="xdg-open 2>/dev/null"
 
-# wget: skip cert check (self-signed) and strip query params from filename
-alias wget="wget --no-check-certificate --content-disposition"
+# Preserve TLS verification by default. Labs with an intentionally self-signed
+# target can opt in explicitly with `wget-insecure`.
+alias wget="wget --content-disposition"
+alias wget-insecure="wget --no-check-certificate --content-disposition"
 
 # completion caching so tab-complete doesn't hang on first use
 zstyle ':completion:*' use-cache on
