@@ -1,6 +1,13 @@
-# Egress ACL template for remote-desktop session containers (iifname rdb*).
-# TEMPLATE: fill the defines with per-site values before loading (install.sh
-# does NOT load this file by default -- see the rd_input note below).
+# PROTOTYPE / NON-PRODUCTION egress and partial ingress ACL for remote-desktop
+# pool containers (iifname/oifname rdb*). The current CTFd plugin does not use
+# these pool networks. This template intentionally has no site-defined SSH
+# client allowlist and no final default-deny rule for every other published
+# container port, so it does NOT satisfy the production ingress matrix in the
+# repository and plugin READMEs. Do not rely on it for untrusted sessions.
+#
+# For an isolated prototype lab, copy it to /etc/rd-egress.nft, fill every
+# per-site value, and run install.sh in its non-dev mode. That mode validates
+# these prototype inputs; its success is not production approval.
 #
 # Layering: docker's DOCKER-ISOLATION chains are the first layer of
 # inter-bridge isolation; this table is the site egress policy on top.
@@ -13,8 +20,8 @@
 # sensei pull path all at once.
 #
 # NOT loaded on dev: the rd_input chain drops new container->host
-# connections, which is correct on prod but breaks the dev host-gateway
-# CTFd topology.
+# connections, which models a hardened runner but breaks the dev host-gateway
+# CTFd topology. It does not make this partial prototype policy production-safe.
 #
 # Chains are named rd_fwd/rd_input deliberately: `fwd` is an nft keyword and
 # does not parse -- do not rename them back.
@@ -32,21 +39,48 @@ define CHALLENGE_TARGETS = { 198.51.100.0/24 }          # REPLACE (placeholder)
 # REPLACE: RFC1918 + runner LAN CIDRs + campus management CIDRs
 define BLOCKED_DST = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }
 
+# PROXY_CIDRS and RUNNER_PEER_CIDRS are injected by install.sh from the
+# mandatory RD_PROXY_CIDRS and RD_RUNNER_PEER_CIDRS environment values. Do
+# not define them in this site file. The former is the reverse-proxy/CTFd
+# source range allowed to reach published web endpoints. The latter lists
+# every runner management/LAN range, including this runner's own range.
+
 table ip rd_egress {
     chain rd_fwd {
         type filter hook forward priority -5; policy accept;
-        iifname "rdb*" ct state established,related accept
+        # Unconditional and before every site allowlist: no challenge target
+        # may overlap the session pool. This blocks direct cross-bridge traffic
+        # and the host-published-port/DNAT hairpin path.
+        iifname "rdb*" ip daddr 10.77.0.0/16 counter drop comment "rd-peer-session-drop-v1"
+        # Return traffic for the explicitly-authorized web proxy must precede
+        # private/runner destination drops. Without it, a private proxy's SYN
+        # reaches noVNC/ttyd but the container's SYN-ACK is discarded.
+        iifname "rdb*" ip daddr $PROXY_CIDRS tcp sport { 6080, 7682 } ct state established,related accept comment "rd-proxy-web-return-v1"
+        iifname "rdb*" ip daddr $RUNNER_PEER_CIDRS counter drop comment "rd-runner-peer-drop-v1"
         iifname "rdb*" ip daddr $CHALLENGE_TARGETS accept
         iifname "rdb*" ip daddr $CTFD_HOST tcp dport { 80, 443 } accept
         iifname "rdb*" ip daddr $DNS_SERVERS meta l4proto { tcp, udp } th dport 53 accept
         iifname "rdb*" ip daddr $NTP_SERVERS udp dport 123 accept
         iifname "rdb*" ip daddr $APT_MIRRORS tcp dport { 80, 443 } accept
         iifname "rdb*" ip daddr $BLOCKED_DST counter drop
+        # State is deliberately after protected destinations: connections
+        # opened during a policy outage are cut off when policy is restored.
+        iifname "rdb*" ct state established,related accept
+
+        # Docker DNAT has already translated random host ports to container
+        # ports here. Only the trusted reverse proxy may enter noVNC/ttyd.
+        # Raw VNC is never externally reachable; websockify's localhost
+        # connection stays inside the container and does not traverse here.
+        oifname "rdb*" ip saddr $PROXY_CIDRS tcp dport { 6080, 7682 } accept comment "rd-proxy-web-allow-v1"
+        oifname "rdb*" tcp dport { 6080, 7682 } counter drop comment "rd-proxy-web-drop-v1"
+        oifname "rdb*" tcp dport 5900 counter drop comment "rd-raw-vnc-drop-v1"
     }
 
     chain rd_input {
         type filter hook input priority -5; policy accept;
-        iifname "rdb*" ct state established,related accept
-        iifname "rdb*" ct state new counter drop
+        # Prototype pool sessions have no legitimate runner-host endpoint.
+        # Drop all states so a connection opened during a policy outage cannot
+        # survive restoration.
+        iifname "rdb*" counter drop comment "rd-host-input-drop-v1"
     }
 }

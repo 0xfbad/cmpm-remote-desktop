@@ -13,6 +13,6 @@
 table bridge rd_iso {
     chain rd_fwd {
         type filter hook forward priority -300; policy accept;
-        meta ibrname "rdb*" counter drop
+        meta ibrname "rdb*" counter drop comment "rd-bridge-drop-v1"
     }
 }

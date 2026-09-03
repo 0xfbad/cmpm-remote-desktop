@@ -1,0 +1,17 @@
+[Unit]
+Description=Remote-desktop atomic nftables isolation and ingress policy
+Documentation=file:/etc/rd-network-policy.nft
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target docker.service
+After=local-fs.target nftables.service
+PartOf=nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/rd-network-policy-load.sh
+ExecReload=/usr/local/lib/rd-network-policy-load.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
