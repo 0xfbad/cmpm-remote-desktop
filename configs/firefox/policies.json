@@ -48,7 +48,7 @@
     "Certificates": {
       "ImportEnterpriseRoots": true,
       "Install": [
-        "/usr/local/share/ca-certificates/cmpm-sec-01.pem"
+        "/usr/local/share/ca-certificates/cmpm-sec-01.crt"
       ]
     },
     "Preferences": {

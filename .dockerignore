@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!Dockerfile.kasm
+!assets/
+!assets/**
+!configs/
+!configs/**
+!install/
+!install/**

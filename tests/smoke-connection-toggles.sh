@@ -9,7 +9,10 @@ FAILURES=0
 
 say() { printf '%s\n' "$*"; }
 pass() { say "PASS: $*"; }
-fail() { say "FAIL: $*"; FAILURES=$((FAILURES + 1)); }
+fail() {
+  say "FAIL: $*"
+  FAILURES=$((FAILURES + 1))
+}
 
 cleanup() {
   docker rm -f rd-smoke-toggles >/dev/null 2>&1 || true
@@ -17,11 +20,12 @@ cleanup() {
 trap cleanup EXIT
 
 wait_ready() {
-  # deterministic barrier: xfce4-session starts only after both gated service
-  # blocks and the in-script readiness loop have completed
-  local c=$1 i
-  for i in $(seq 1 120); do
-    if docker exec "$c" pgrep -f xfce4-session >/dev/null 2>&1; then
+  # Readiness means the complete adaptive health contract passes, including
+  # noVNC and only the endpoints enabled for this case.
+  local c=$1
+  for _i in $(seq 1 120); do
+    if docker exec "$c" test -f /run/remote-desktop/ready >/dev/null 2>&1 &&
+      docker exec "$c" /usr/local/bin/remote-desktop-healthcheck >/dev/null 2>&1; then
       return 0
     fi
     # container died?
@@ -36,9 +40,9 @@ proc_state() {
   docker exec "$1" pgrep -x "$2" >/dev/null 2>&1
   local rc=$?
   case $rc in
-    0) echo present ;;
-    1) echo absent ;;
-    *) echo "error($rc)" ;;
+  0) echo present ;;
+  1) echo absent ;;
+  *) echo "error($rc)" ;;
   esac
 }
 
@@ -52,9 +56,9 @@ run_case() {
   cleanup
   # shellcheck disable=SC2086
   docker run -d --name rd-smoke-toggles $env_args $port_args \
-    -e CTFD_USERNAME=smokeuser -e VNC_PASSWORD=smokepass "$IMAGE" >/dev/null
+    -e CTFD_USERNAME=smokeuser -e VNC_PASSWORD=smokepw "$IMAGE" >/dev/null
   if ! wait_ready rd-smoke-toggles; then
-    fail "$label: container never reached xfce4-session"
+    fail "$label: container never became healthy"
     docker logs rd-smoke-toggles 2>&1 | tail -5
     return
   fi
@@ -62,17 +66,17 @@ run_case() {
   local sshd ttyd
   sshd=$(proc_state rd-smoke-toggles sshd)
   ttyd=$(proc_state rd-smoke-toggles ttyd)
-  [ "$sshd" = "$want_sshd" ] && pass "$label: sshd $sshd" || fail "$label: sshd $sshd (want $want_sshd)"
-  [ "$ttyd" = "$want_ttyd" ] && pass "$label: ttyd $ttyd" || fail "$label: ttyd $ttyd (want $want_ttyd)"
+  if [ "$sshd" = "$want_sshd" ]; then pass "$label: sshd $sshd"; else fail "$label: sshd $sshd (want $want_sshd)"; fi
+  if [ "$ttyd" = "$want_ttyd" ]; then pass "$label: ttyd $ttyd"; else fail "$label: ttyd $ttyd (want $want_ttyd)"; fi
 
   for p in 22 7682; do
     local want=absent
     { [ "$p" = 22 ] && [ "$want_sshd" = present ]; } && want=present
     { [ "$p" = 7682 ] && [ "$want_ttyd" = present ]; } && want=present
     if port_published rd-smoke-toggles "$p"; then
-      [ "$want" = present ] && pass "$label: port $p published" || fail "$label: port $p published (want unpublished)"
+      if [ "$want" = present ]; then pass "$label: port $p published"; else fail "$label: port $p published (want unpublished)"; fi
     else
-      [ "$want" = absent ] && pass "$label: port $p not published" || fail "$label: port $p not published (want published)"
+      if [ "$want" = absent ]; then pass "$label: port $p not published"; else fail "$label: port $p not published (want published)"; fi
     fi
   done
 
