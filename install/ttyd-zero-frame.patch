@@ -1,0 +1,170 @@
+diff --git a/src/protocol.c b/src/protocol.c
+--- a/src/protocol.c
++++ b/src/protocol.c
+@@ -10,6 +10,9 @@
+ #include "server.h"
+ #include "utils.h"
+ 
++/* Bound attacker-controlled buffering across WebSocket fragments. */
++#define MAX_MESSAGE_SIZE ((size_t)10 * 1024 * 1024)
++
+ // initial message list
+ static char initial_cmds[] = {SET_WINDOW_TITLE, SET_PREFERENCES};
+ 
+@@ -36,15 +39,39 @@
+ }
+ 
+ static json_object *parse_window_size(const char *buf, size_t len, uint16_t *cols, uint16_t *rows) {
++  if (len == 0 || len > MAX_MESSAGE_SIZE) return NULL;
++
+   json_tokener *tok = json_tokener_new();
++  if (tok == NULL) return NULL;
++
++  json_tokener_set_flags(tok, JSON_TOKENER_STRICT | JSON_TOKENER_VALIDATE_UTF8);
+   json_object *obj = json_tokener_parse_ex(tok, buf, len);
+-  struct json_object *o = NULL;
++  enum json_tokener_error error = json_tokener_get_error(tok);
++  size_t parse_end = json_tokener_get_parse_end(tok);
++  json_tokener_free(tok);
+ 
+-  if (json_object_object_get_ex(obj, "columns", &o)) *cols = (uint16_t)json_object_get_int(o);
+-  if (json_object_object_get_ex(obj, "rows", &o)) *rows = (uint16_t)json_object_get_int(o);
++  if (obj == NULL || error != json_tokener_success || parse_end != len ||
++      !json_object_is_type(obj, json_type_object)) {
++    if (obj != NULL) json_object_put(obj);
++    return NULL;
++  }
+ 
+-  json_tokener_free(tok);
++  struct json_object *o = NULL;
++  if (json_object_object_get_ex(obj, "columns", &o)) {
++    int64_t value = json_object_get_int64(o);
++    if (!json_object_is_type(o, json_type_int) || value < 1 || value > UINT16_MAX) goto invalid;
++    *cols = (uint16_t)value;
++  }
++  if (json_object_object_get_ex(obj, "rows", &o)) {
++    int64_t value = json_object_get_int64(o);
++    if (!json_object_is_type(o, json_type_int) || value < 1 || value > UINT16_MAX) goto invalid;
++    *rows = (uint16_t)value;
++  }
+   return obj;
++
++invalid:
++  json_object_put(obj);
++  return NULL;
+ }
+ 
+ static bool check_host_origin(struct lws *wsi) {
+@@ -281,11 +308,31 @@
+       break;
+ 
+     case LWS_CALLBACK_RECEIVE:
++      /* Every ttyd client message starts with a command byte. xmalloc(0)
++       * returns NULL, so accepting an empty message would dereference
++       * pss->buffer[0] below and terminate the server. */
++      if (len == 0) {
++        lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR, NULL, 0);
++        return -1;
++      }
+       if (pss->buffer == NULL) {
++        if (len > MAX_MESSAGE_SIZE) {
++          lwsl_warn("WS message too large: %zu bytes (max %zu)\n", len, MAX_MESSAGE_SIZE);
++          lws_close_reason(wsi, LWS_CLOSE_STATUS_MESSAGE_TOO_LARGE, NULL, 0);
++          return -1;
++        }
+         pss->buffer = xmalloc(len);
+         pss->len = len;
+         memcpy(pss->buffer, in, len);
+       } else {
++        if (pss->len > MAX_MESSAGE_SIZE || len > MAX_MESSAGE_SIZE - pss->len) {
++          lwsl_warn("WS message too large: more than %zu bytes\n", MAX_MESSAGE_SIZE);
++          free(pss->buffer);
++          pss->buffer = NULL;
++          pss->len = 0;
++          lws_close_reason(wsi, LWS_CLOSE_STATUS_MESSAGE_TOO_LARGE, NULL, 0);
++          return -1;
++        }
+         pss->buffer = xrealloc(pss->buffer, pss->len + len);
+         memcpy(pss->buffer + pss->len, in, len);
+         pss->len += len;
+@@ -293,6 +340,13 @@
+ 
+       const char command = pss->buffer[0];
+ 
++      if ((pss->process == NULL && command != JSON_DATA) ||
++          (pss->process != NULL && command == JSON_DATA)) {
++        lwsl_warn("WS message is invalid for the client state\n");
++        lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR, NULL, 0);
++        return -1;
++      }
++
+       // check auth
+       if (server->credential != NULL && !pss->authenticated && command != JSON_DATA) {
+         lwsl_warn("WS client not authenticated\n");
+@@ -307,6 +361,10 @@
+       switch (command) {
+         case INPUT:
+           if (!server->writable) break;
++          if (pss->process == NULL) {
++            lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR, NULL, 0);
++            return -1;
++          }
+           int err = pty_write(pss->process, pty_buf_init(pss->buffer + 1, pss->len - 1));
+           if (err) {
+             lwsl_err("uv_write: %s (%s)\n", uv_err_name(err), uv_strerror(err));
+@@ -314,22 +372,39 @@
+           }
+           break;
+         case RESIZE_TERMINAL:
+-          if (pss->process == NULL) break;
+-          json_object_put(
+-              parse_window_size(pss->buffer + 1, pss->len - 1, &pss->process->columns, &pss->process->rows));
++          json_object *resize =
++              parse_window_size(pss->buffer + 1, pss->len - 1, &pss->process->columns, &pss->process->rows);
++          if (resize == NULL) {
++            lwsl_warn("invalid RESIZE_TERMINAL message\n");
++            lws_close_reason(wsi, LWS_CLOSE_STATUS_INVALID_PAYLOAD, NULL, 0);
++            return -1;
++          }
++          json_object_put(resize);
+           pty_resize(pss->process);
+           break;
+         case PAUSE:
++          if (pss->len != 1) {
++            lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR, NULL, 0);
++            return -1;
++          }
+           pty_pause(pss->process);
+           break;
+         case RESUME:
++          if (pss->len != 1) {
++            lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR, NULL, 0);
++            return -1;
++          }
+           pty_resume(pss->process);
+           break;
+         case JSON_DATA:
+-          if (pss->process != NULL) break;
+           uint16_t columns = 0;
+           uint16_t rows = 0;
+           json_object *obj = parse_window_size(pss->buffer, pss->len, &columns, &rows);
++          if (obj == NULL) {
++            lwsl_warn("invalid JSON_DATA message\n");
++            lws_close_reason(wsi, LWS_CLOSE_STATUS_INVALID_PAYLOAD, NULL, 0);
++            return -1;
++          }
+           if (server->credential != NULL) {
+             struct json_object *o = NULL;
+             if (json_object_object_get_ex(obj, "AuthToken", &o)) {
+@@ -349,8 +424,9 @@
+           if (!spawn_process(pss, columns, rows)) return 1;
+           break;
+         default:
+-          lwsl_warn("ignored unknown message type: %c\n", command);
+-          break;
++          lwsl_warn("rejected unknown message type: %c\n", command);
++          lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR, NULL, 0);
++          return -1;
+       }
+ 
+       if (pss->buffer != NULL) {
