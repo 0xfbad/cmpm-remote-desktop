@@ -24,19 +24,108 @@ interlock, and the XFS data-root build script.
 ## Install
 
 ```sh
-# dev box (log caps + tripwire only):
+# dev box (log caps + tripwire only; Docker is not restarted):
 sudo ./install.sh
 
-# runner (adds storage-opts + mount interlock):
+# runner (adds storage-opts + mount interlock; Docker is not restarted):
 sudo ./install.sh --with-storage-opts
 
-# either, without bouncing dockerd (apply config on next restart):
-sudo ./install.sh --no-restart-docker
+# Explicitly apply a changed config on an already-drained host:
+sudo ./install.sh --with-storage-opts --restart-docker
 ```
 
-install.sh is idempotent and MERGES into any existing /etc/docker/daemon.json
-with jq (a timestamped backup is taken first). Unrelated keys such as
+Docker restart is deliberately opt-in. Even with `--restart-docker`, the
+installer restarts only an already-running daemon, only when daemon.json or the
+mount interlock actually changed, and only after `docker ps` is empty both
+before mutation and immediately before restart. It never starts an inactive
+daemon. If the changed configuration fails to restart, the installer restores
+the exact prior daemon.json and interlock drop-in, reloads systemd, attempts one
+recovery restart with the old files, and still exits nonzero so the failed
+change cannot be mistaken for success. Without the flag, changed settings take
+effect on the next operator-controlled Docker restart.
+
+`install.sh --with-storage-opts` queries the running daemon for its active
+Docker data-root and exits without changing configuration unless that exact
+directory is a dedicated XFS mount with project quotas (`prjquota`/`pquota`)
+and `ftype=1`. The mount must be a whole, block-backed filesystem on a device
+separate from `/`, not a bind mount. This intentionally requires Docker to be
+running for the preflight; it prevents checking one path while dockerd actually
+uses another.
+
+`install.sh` is idempotent and merges into any existing
+`/etc/docker/daemon.json` with jq. It creates the candidate as a mode-0600
+temporary file in `/etc/docker`, validates it with both jq and
+`dockerd --validate`, takes a timestamped backup of the prior file, and then
+renames the candidate into place atomically. Invalid existing or generated
+configuration is left untouched. Unrelated keys such as
 `default-address-pools` (owned by the network provisioning) are preserved.
+The generated systemd mount interlock uses the active data-root reported by
+Docker rather than assuming `/var/lib/docker`.
+
+## Prepare an XFS data-root
+
+Stop both Docker activation paths before invoking the destructive real-device
+mode:
+
+```sh
+sudo systemctl stop docker.socket docker.service
+sudo ./xfs/make-data-root.sh /dev/disk/by-id/EXACT_DEVICE /var/lib/docker
+```
+
+At entry, the helper runtime-masks `rd-io-tripwire.timer` and
+`rd-telemetry.timer`, stops any in-flight instances of their services, and
+leaves that maintenance hold in place. Their service units also use an
+`ExecCondition` instead of `Requires=`/`Wants=`, so a timer firing can never
+start a deliberately stopped Docker daemon through dependency or socket
+activation. The helper rechecks both systemd activation paths and the dockerd
+process immediately before every `mkfs.xfs` and every mount.
+
+The helper refuses to proceed if Docker/dockerd is active, the selected block
+device (or a child) is mounted or has active holders, the device is referenced
+by fstab or open by a process, the mount target is mounted or referenced by
+fstab, or the target is nonempty. These checks are never bypassed. `--force`
+has one narrow meaning:
+it passes `-f` to `mkfs.xfs` for the resolved, exact block device when that
+device already has a filesystem. It is not accepted in `--loopback` mode and
+does not overwrite an existing loopback image.
+
+The fstab entry is installed only after the new filesystem has mounted and
+XFS project quotas plus `ftype=1` have been verified. The default target is
+`/var/lib/docker`; a nonempty directory is rejected so an XFS mount cannot
+silently hide existing Docker data.
+
+Keep the monitoring timers masked while configuring and verifying the new
+Docker root. Release the hold only after Docker is healthy on the intended
+mount:
+
+```sh
+sudo systemctl unmask --runtime rd-io-tripwire.timer rd-telemetry.timer
+sudo systemctl enable --now rd-io-tripwire.timer rd-telemetry.timer
+```
+
+`install.sh` detects this runtime mask and will not remove it or fail by trying
+to start the held timer.
+
+For a non-persistent scratch test, use a new image path and an empty target:
+
+```sh
+sudo ./xfs/make-data-root.sh --loopback /var/tmp/rd-xfs.img 30G /mnt/rd-docker-test
+```
+
+## Non-destructive checks
+
+```sh
+./tests/storage-safety-static.sh
+./tests/storage-install-regression.sh
+```
+
+This checks shell syntax, the reference JSON, validation/install ordering, and
+the presence of the destructive-operation guardrails. The behavioral
+regression uses a temporary filesystem root and fake Docker/systemd commands to
+prove restart opt-in, no-op change sensitivity, drain refusal, and rollback of
+both prior config files after a simulated failed restart. The checks also run
+shellcheck when it is installed. They do not format, mount, restart, or write to
+host configuration.
 
 ## Post-install verification
 

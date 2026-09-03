@@ -1,10 +1,15 @@
 [Unit]
 Description=rd session IO tripwire (pauses runaway writers, preserves evidence)
+# Ordering alone does not pull Docker into the transaction. In particular, do
+# not add Requires=/Wants=: this service is timer-triggered and must never start
+# a deliberately stopped daemon during storage maintenance.
 After=docker.service
-Requires=docker.service
 
 [Service]
 Type=oneshot
+# Skip cleanly unless dockerd is already running. This check happens before the
+# script can contact docker.socket and accidentally activate the daemon.
+ExecCondition=/usr/bin/systemctl --quiet is-active docker.service
 TimeoutStartSec=20s
 EnvironmentFile=-/etc/default/rd-io-tripwire
 ExecStart=/usr/local/lib/rd-io-tripwire.sh
