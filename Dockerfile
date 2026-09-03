@@ -276,20 +276,10 @@ RUN dumpcap_path="$(command -v dumpcap)" \
     && test ! -s /etc/machine-id \
     && ! compgen -G '/etc/ssh/ssh_host_*_key*' >/dev/null
 
-ARG OCI_CREATED=""
+# Only two labels earn their place: the contract the plugin gates on, and the
+# revision a support request needs to name the build a student is running.
 ARG OCI_REVISION=""
-ARG OCI_VERSION="development"
-LABEL org.opencontainers.image.title="CMPM 17 Remote Desktop" \
-      org.opencontainers.image.description="Per-student Kali XFCE desktop for the CTFd remote desktop plugin" \
-      org.opencontainers.image.source="https://git.ucsc.edu/intro-hacking-competitions/remote-desktop" \
-      org.opencontainers.image.authors="CMPM 17 course staff" \
-      org.opencontainers.image.vendor="University of California, Santa Cruz" \
-      org.opencontainers.image.created="$OCI_CREATED" \
-      org.opencontainers.image.revision="$OCI_REVISION" \
-      org.opencontainers.image.version="$OCI_VERSION" \
-      org.opencontainers.image.base.name="docker.io/kalilinux/kali-rolling" \
-      org.opencontainers.image.base.digest="sha256:ed99295a386abde2fb31e01a441b7c2800d9bcf19a20028b77d642c3ef068363" \
-      edu.ucsc.ctfd-remote-desktop.course-ca-sha256="$UCSC_CA_CERT_SHA256" \
+LABEL org.opencontainers.image.revision="$OCI_REVISION" \
       edu.ucsc.ctfd-remote-desktop.contract="3"
 
 EXPOSE 22 5900 6080 7682

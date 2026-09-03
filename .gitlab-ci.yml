@@ -45,9 +45,7 @@ image-and-network-e2e:
       docker build --pull --platform linux/amd64
       --secret id=ucsc_ca,src="$UCSC_CA_CERT_FILE"
       --build-arg UCSC_CA_CERT_SHA256="$UCSC_CA_CERT_SHA256"
-      --build-arg OCI_CREATED="$CI_COMMIT_TIMESTAMP"
       --build-arg OCI_REVISION="$CI_COMMIT_SHA"
-      --build-arg OCI_VERSION="${CI_COMMIT_TAG:-development-$CI_COMMIT_SHORT_SHA}"
       -t ctfd-remote-desktop:ci .
     - >-
       docker run --rm --env EXPECTED_CA_SHA256="$UCSC_CA_CERT_SHA256"
