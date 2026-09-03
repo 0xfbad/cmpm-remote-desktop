@@ -236,10 +236,13 @@ RUN set -Eeuo pipefail; \
         fi; \
     done
 COPY configs/zshrc /tmp/custom-zshrc
+COPY configs/workspace-capture.zsh /tmp/workspace-capture.zsh
 COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
 COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
-RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; } > /etc/skel/.zshrc \
-    && rm /tmp/custom-zshrc \
+# workspace-capture goes last so its precmd hook is registered after fzf and zoxide
+RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; \
+        cat /tmp/workspace-capture.zsh; } > /etc/skel/.zshrc \
+    && rm /tmp/custom-zshrc /tmp/workspace-capture.zsh \
     && zsh -c 'autoload -Uz compinit && compinit -d /etc/skel/.cache/zcompdump'
 
 # noVNC reconnect patch - revert PR 1672 when the packaged source still needs

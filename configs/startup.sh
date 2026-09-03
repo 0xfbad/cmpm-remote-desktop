@@ -227,6 +227,12 @@ else
   usermod -s "$USER_SHELL" "$USERNAME"
 fi
 
+# ENABLE_WORKSPACE_CONTEXT=1 opts in to command capture; absent or any other value is off.
+# Deliberately outside $state_dir, which must stay 0700 root:root.
+if [[ ${ENABLE_WORKSPACE_CONTEXT:-0} == 1 ]]; then
+  install -d -o "$USERNAME" -g "$USERNAME" -m 0700 /var/lib/rd-workspace
+fi
+
 sudoers_tmp=/etc/sudoers.d/90-remote-desktop-user.tmp.$$
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$USERNAME" >"$sudoers_tmp"
 chmod 0440 "$sudoers_tmp"
