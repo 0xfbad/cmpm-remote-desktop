@@ -42,6 +42,7 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,200}$")
 RECV_SIZE = 65536
 PID_CACHE_TTL = 2.0  # seconds; pid-reuse inside this window is not attacker-steerable
 FLUSH_META_EVERY = 5.0
+USAGE_RESCAN_EVERY = 60.0
 
 
 class DockerNames:
@@ -133,6 +134,40 @@ class Collector:
         self.unattributed = 0
         self.dropped = 0
         self.last_meta_flush: dict[str, float] = {}
+        self.last_usage_scan = 0.0
+        self._restore_usage()
+
+    def _restore_usage(self) -> None:
+        """Rebuild cap accounting from durable files after every restart.
+
+        The collector is intentionally restartable under systemd socket
+        activation.  Starting counters at zero made every restart reset both
+        byte caps, so the limits were not limits at all.  Symlinks and special
+        files are ignored; the service's protected state directory should
+        contain only collector-owned regular files.
+        """
+        self.session_bytes = {}
+        self.total_bytes = 0
+        suffixes = (".tlog.jsonl", ".syslog.log", ".jsonl")
+        for root, _dirs, files in os.walk(self.sessions_dir, followlinks=False):
+            for filename in files:
+                path = os.path.join(root, filename)
+                try:
+                    st = os.lstat(path)
+                except OSError:
+                    continue
+                if not os.path.isfile(path) or os.path.islink(path):
+                    continue
+                self.total_bytes += st.st_size
+                relative = os.path.relpath(path, self.sessions_dir)
+                for suffix in suffixes:
+                    if relative.endswith(suffix):
+                        name = relative[: -len(suffix)]
+                        self.session_bytes[name] = self.session_bytes.get(name, 0) + st.st_size
+                        break
+        self.capped = {name for name, used in self.session_bytes.items() if used >= self.per_session_max}
+        self.total_capped = self.total_bytes >= self.total_max
+        self.last_usage_scan = time.time()
 
     # -- attribution ---------------------------------------------------------
 
@@ -159,24 +194,35 @@ class Collector:
         return os.path.join(self.sessions_dir, f"{name}{suffix}")
 
     def _append(self, name: str, suffix: str, data: bytes) -> None:
+        # The retention timer deletes old files independently. Rescan even
+        # while capped so reclaimed space becomes usable without restarting
+        # the collector (and without letting a restart reset accounting).
+        if time.time() - self.last_usage_scan >= USAGE_RESCAN_EVERY:
+            self._restore_usage()
         if self.total_capped:
             return
         used = self.session_bytes.get(name, 0)
         if name in self.capped:
             self.dropped += 1
             return
+        if self.total_bytes + len(data) > self.total_max:
+            self.total_capped = True
+            self.dropped += 1
+            print("TOTAL byte cap reached - transcript writes stopped, still draining", file=sys.stderr, flush=True)
+            return
         if used + len(data) > self.per_session_max:
             self.capped.add(name)
-            marker = json.dumps({"rd_collector": "cap_reached", "ts": time.time()}).encode() + b"\n"
-            self._raw_write(name, suffix, marker)
+            self.dropped += 1
             print(f"per-session cap reached for {name}", file=sys.stderr, flush=True)
             return
         self._raw_write(name, suffix, data)
         self.session_bytes[name] = used + len(data)
         self.total_bytes += len(data)
-        if self.total_bytes > self.total_max:
-            self.total_capped = True
-            print("TOTAL byte cap reached - transcript writes stopped, still draining", file=sys.stderr, flush=True)
+
+    def _refresh_caps_if_due(self) -> None:
+        """Refresh durable accounting even when the fast-drop path is active."""
+        if time.time() - self.last_usage_scan >= USAGE_RESCAN_EVERY:
+            self._restore_usage()
 
     def _raw_write(self, name: str, suffix: str, data: bytes) -> None:
         path = self._path_for(name, suffix)
@@ -187,7 +233,7 @@ class Collector:
         if now - self.last_meta_flush.get(name, 0) > FLUSH_META_EVERY:
             meta = self._path_for(name, ".meta")
             with open(meta, "w") as f:
-                json.dump({"last_write": now, "bytes": self.session_bytes.get(name, 0)}, f)
+                json.dump({"last_write": now, "bytes": self.session_bytes.get(name, 0) + len(data)}, f)
             self.last_meta_flush[name] = now
 
     # -- main loop -----------------------------------------------------------
@@ -214,6 +260,11 @@ class Collector:
                 self.unattributed += 1
                 self._append("unattributed", ".jsonl", payload + b"\n")
                 continue
+            # The retention timer may have deleted capped files. Refresh
+            # before the fast drop so capacity can recover without a service
+            # restart; _append's rescan alone is unreachable from this path.
+            if name in self.capped or self.total_capped:
+                self._refresh_caps_if_due()
             if name in self.capped or self.total_capped:
                 self.dropped += 1
                 continue

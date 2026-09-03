@@ -5,6 +5,7 @@
 # and silently lose transcripts until session end). restart the .service freely.
 [Unit]
 Description=rd-tlog collector socket (per-session terminal transcripts)
+RequiresMountsFor=/var/lib/rd-tlog
 
 [Socket]
 ListenDatagram=/run/rd-tlog/log.sock

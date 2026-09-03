@@ -2,17 +2,27 @@
 Description=rd-tlog collector (per-session terminal transcripts)
 Requires=rd-tlog-collector.socket
 After=rd-tlog-collector.socket
+RequiresMountsFor=/var/lib/rd-tlog
 
 [Service]
+ExecStartPre=/usr/local/lib/rd-tlog/check-store.sh
 ExecStart=/usr/bin/python3 /usr/local/lib/rd-tlog/rd_tlog_collector.py
 Restart=always
 RestartSec=2
 StateDirectory=rd-tlog
 NoNewPrivileges=yes
-# connect() to /var/run/docker.sock works on a read-only mount - connecting is
-# not a mount-level write
 ProtectSystem=strict
 ReadWritePaths=/var/lib/rd-tlog
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
 Environment=RD_TLOG_PER_SESSION_MAX=1073741824
 Environment=RD_TLOG_TOTAL_MAX=42949672960
 
