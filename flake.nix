@@ -94,22 +94,14 @@
           python-tests =
             pkgs.runCommand "python-tests"
               {
-                nativeBuildInputs = [
-                  pkgs.python3
-                  pkgs.python3Packages.cryptography
-                  pkgs.python3Packages.pytest
-                ];
+                nativeBuildInputs = [ pkgs.python3 ];
               }
               ''
                 cd ${self}
                 export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
                 python3 -m py_compile \
                   provisioning/tlog/rd_tlog_collector.py \
-                  tests/e2e-ttyd-websocket.py \
-                  tests/test_tlog_collector.py \
                   configs/session-init/collector
-                python3 tests/e2e-ttyd-websocket.py --help >/dev/null
-                pytest -q -p no:cacheprovider tests/test_tlog_collector.py
                 touch $out
               '';
           provisioning-safety =

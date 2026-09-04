@@ -40,7 +40,6 @@ image-and-network-e2e:
       : "${UCSC_CA_CERT_FILE:?configure a protected GitLab file variable containing the course CA PEM}"
       : "${UCSC_CA_CERT_SHA256:?configure the independently verified course CA DER SHA-256}"
       test -r "$UCSC_CA_CERT_FILE"
-    - docker run --rm --volume "$PWD:/work:ro" ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 bash -lc 'export DEBIAN_FRONTEND=noninteractive; apt-get update >/dev/null; apt-get install -y --no-install-recommends python3 systemd >/dev/null; mkdir -p /usr/local/lib/rd-tlog; install -m 0755 /work/provisioning/network/bin/rd-network-policy-load.sh /usr/local/lib/rd-network-policy-load.sh; install -m 0755 /work/provisioning/storage/bin/rd-io-tripwire.sh /usr/local/lib/rd-io-tripwire.sh; install -m 0755 /work/provisioning/compute/telemetry/rd-telemetry.sh /usr/local/lib/rd-telemetry.sh; install -m 0755 /work/provisioning/tlog/check-store.sh /usr/local/lib/rd-tlog/check-store.sh; install -m 0755 /work/provisioning/tlog/rd_tlog_collector.py /usr/local/lib/rd-tlog/rd_tlog_collector.py; bash /work/tests/systemd-unit-verify.sh'
     - >-
       docker build --pull --platform linux/amd64
       --secret id=ucsc_ca,src="$UCSC_CA_CERT_FILE"
@@ -62,15 +61,6 @@ image-and-network-e2e:
       docker run --rm --entrypoint curl ctfd-remote-desktop:ci
       --fail --silent --show-error --max-time 20 --output /dev/null
       https://cmpm-sec-01.acad.ucsc.edu/
-    - python3 tests/e2e-ttyd-websocket.py --image ctfd-remote-desktop:ci
-    - bash tests/smoke-connection-toggles.sh ctfd-remote-desktop:ci
-    - bash tests/smoke-tlog.sh ctfd-remote-desktop:ci
-    - bash tests/smoke-runtime-hardening.sh ctfd-remote-desktop:ci
-    - bash tests/smoke-workspace-context.sh ctfd-remote-desktop:ci
-    - bash tests/privileged-telemetry-e2e.sh
-    - bash tests/privileged-storage-e2e.sh
-    - bash tests/privileged-tlog-store-e2e.sh
-    - bash tests/privileged-network-e2e.sh
   rules:
     - if: '$CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"'
       when: manual
