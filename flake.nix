@@ -47,7 +47,6 @@
           formatting = treefmtEval.${pkgs.system}.config.build.check self;
           hadolint = pkgs.runCommand "hadolint" { nativeBuildInputs = [ pkgs.hadolint ]; } ''
             hadolint --config ${self}/.hadolint.yaml ${self}/Dockerfile
-            hadolint --config ${self}/.hadolint.yaml ${self}/Dockerfile.kasm
             touch $out
           '';
           # xfconf silently drops a malformed channel and firefox silently ignores
@@ -128,7 +127,6 @@
                 bash provisioning/storage/tests/storage-safety-static.sh
                 bash provisioning/storage/tests/storage-install-regression.sh
                 bash provisioning/tlog/tests/tlog-store-safety-static.sh
-                bash tests/kasm-quarantine-static.sh
                 touch $out
               '';
           ttyd-patch =
