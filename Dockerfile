@@ -179,6 +179,9 @@ RUN apt-get update && apt-get install -y tlog \
 
 # layer 5 - configs (changes often, near end)
 
+COPY install/install-ublock-origin.sh /tmp/
+RUN bash /tmp/install-ublock-origin.sh && rm /tmp/install-ublock-origin.sh
+
 # firefox - policies, autoconfig, and override kali default bookmarks
 COPY configs/firefox/policies.json /usr/lib/firefox-esr/distribution/policies.json
 COPY configs/firefox/policies.json /usr/share/firefox-esr/distribution/policies.json

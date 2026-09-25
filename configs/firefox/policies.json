@@ -7,6 +7,12 @@
     "DisableFirefoxStudies": true,
     "DisableTelemetry": true,
     "DisablePocket": true,
+    "ExtensionSettings": {
+      "uBlock0@raymondhill.net": {
+        "installation_mode": "force_installed",
+        "install_url": "file:///usr/local/share/firefox/extensions/ublock-origin.xpi"
+      }
+    },
     "OverrideFirstRunPage": "",
     "OverridePostUpdatePage": "",
     "Homepage": {
@@ -37,6 +43,11 @@
       {
         "Title": "CyberChef",
         "URL": "https://gchq.github.io/CyberChef/",
+        "Placement": "toolbar"
+      },
+      {
+        "Title": "excalidraw",
+        "URL": "https://excalidraw.com/",
         "Placement": "toolbar"
       }
     ],
