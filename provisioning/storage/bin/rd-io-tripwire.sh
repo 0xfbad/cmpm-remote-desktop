@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# rd-io-tripwire: pause rd-session-* containers writing above RATE_TRIP_BYTES
-# for CONSEC consecutive samples. Pause ONLY — never stop/kill/rm: auto_remove
-# would delete the writable layer, i.e. the evidence.
 set -u
-# Non-zero exit must never trigger systemd backoff.
+# failure must not trigger systemd backoff
 trap 'exit 0' EXIT
 
 RATE_TRIP_BYTES="${RATE_TRIP_BYTES:-209715200}"
@@ -18,27 +15,19 @@ DATA_ROOT="${DATA_ROOT:-/var/lib/docker}"
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
-# rd.slice first (feature 3's slice), then system.slice, then any slice.
 find_iostat() {
   local id="$1" p
   for p in "/sys/fs/cgroup/rd.slice/docker-$id.scope/io.stat" \
-    "/sys/fs/cgroup/system.slice/docker-$id.scope/io.stat"; do
-    if [ -f "$p" ]; then
-      printf '%s\n' "$p"
-      return 0
-    fi
-  done
-  for p in /sys/fs/cgroup/*/docker-"$id".scope/io.stat; do
-    if [ -f "$p" ]; then
-      printf '%s\n' "$p"
-      return 0
-    fi
+    "/sys/fs/cgroup/system.slice/docker-$id.scope/io.stat" \
+    /sys/fs/cgroup/*/docker-"$id".scope/io.stat; do
+    [ -f "$p" ] || continue
+
+    printf '%s\n' "$p"
+    return 0
   done
   return 1
 }
 
-# One-time XFS inode hard limit on the container's overlay upperdir project.
-# Silent no-op on non-XFS data-roots (ext4 dev box).
 ihard_pass() {
   local id="$1" upperdir projid
   [ "$IHARD_ENABLE" = "1" ] || return 0
@@ -48,10 +37,28 @@ ihard_pass() {
   [ -n "$upperdir" ] && [ -d "$upperdir" ] || return 0
   projid=$(lsattr -pd "$upperdir" 2>/dev/null | awk '{print $1; exit}')
   case "$projid" in '' | *[!0-9]*) return 0 ;; esac
+  # project zero contains unrelated files
+  [ "$projid" -gt 0 ] 2>/dev/null || return 0
   if xfs_quota -x -c "limit -p ihard=$IHARD $projid" "$DATA_ROOT" 2>/dev/null; then
     : >"$STATE_DIR/$id.ihard"
     logger -t rd-io-tripwire "ihard=$IHARD set for projid=$projid container=$id"
   fi
+}
+
+pause_writer() {
+  local id="$1" name="$2" rate="$3" wbytes="$4" strikes="$5" ts
+  if [ "$PAUSE_ENABLE" != "1" ]; then
+    logger -t rd-io-tripwire "detect-only: would pause $name ($id): rate=${rate}B/s strikes=$strikes"
+    return
+  fi
+
+  # removing the container would discard its writable layer
+  docker pause "$id" >/dev/null 2>&1 || return
+
+  ts=$(date +%s)
+  printf '{"container_id":"%s","name":"%s","rate_bps":%d,"total_wbytes":%d,"ts":%d,"action":"pause"}\n' \
+    "$id" "$name" "$rate" "$wbytes" "$ts" >"$LOG_DIR/$name.$ts.json"
+  logger -t rd-io-tripwire "paused $name ($id): rate=${rate}B/s total_wbytes=$wbytes"
 }
 
 now=$(date +%s)
@@ -61,7 +68,7 @@ while read -r id name; do
   [ -n "$id" ] || continue
   seen="$seen$id "
 
-  # docker ps lists paused containers too; skip ones already paused.
+  # docker ps includes paused containers
   if [ "$(docker inspect -f '{{.State.Paused}}' "$id" 2>/dev/null)" = "true" ]; then
     continue
   fi
@@ -70,8 +77,7 @@ while read -r id name; do
 
   iostat_path=$(find_iostat "$id") || continue
 
-  # io.stat is EMPTY until the container performs IO: sum must default to 0
-  # on an empty or missing file — no strike, no error.
+  # io.stat stays empty until the first attributed io
   wbytes=$(awk '{for (i = 1; i <= NF; i++)
                        if ($i ~ /^wbytes=/) { split($i, a, "="); s += a[2] }}
                   END { printf "%d", s + 0 }' "$iostat_path" 2>/dev/null)
@@ -95,23 +101,13 @@ while read -r id name; do
       strikes=0
     fi
     if [ "$strikes" -ge "$CONSEC" ]; then
-      if [ "$PAUSE_ENABLE" = "1" ]; then
-        if docker pause "$id" >/dev/null 2>&1; then
-          ts=$(date +%s)
-          printf '{"container_id":"%s","name":"%s","rate_bps":%d,"total_wbytes":%d,"ts":%d,"action":"pause"}\n' \
-            "$id" "$name" "$rate" "$wbytes" "$ts" >"$LOG_DIR/$name.$ts.json"
-          logger -t rd-io-tripwire "paused $name ($id): rate=${rate}B/s total_wbytes=$wbytes"
-        fi
-      else
-        logger -t rd-io-tripwire "detect-only: would pause $name ($id): rate=${rate}B/s strikes=$strikes"
-      fi
+      pause_writer "$id" "$name" "$rate" "$wbytes" "$strikes"
     fi
   fi
 
   printf '%s %s %s\n' "$wbytes" "$now" "$strikes" >"$state_file"
 done < <(docker ps --no-trunc --filter "name=$NAME_PREFIX" --format '{{.ID}} {{.Names}}')
 
-# Prune state (and ihard markers) for vanished containers.
 for f in "$STATE_DIR"/*; do
   [ -e "$f" ] || continue
   base=${f##*/}
