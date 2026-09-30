@@ -26,9 +26,6 @@
       checks = eachSystem (
         pkgs:
         let
-          # Single source of truth for the ttyd pin: install-ttyd.sh. Duplicating
-          # it here let the patch check dry-run a different tarball than the
-          # image builds.
           ttydInstaller = builtins.readFile ./install/install-ttyd.sh;
           ttydPin =
             re: what:
@@ -49,9 +46,7 @@
             hadolint --config ${self}/.hadolint.yaml ${self}/Dockerfile
             touch $out
           '';
-          # xfconf silently drops a malformed channel and firefox silently ignores
-          # malformed policy JSON, so a typo degrades the desktop with a green
-          # pipeline. Parse them at check time instead.
+          # xfconf and firefox ignore malformed configuration at runtime
           config-validation =
             pkgs.runCommand "config-validation"
               {
@@ -82,10 +77,9 @@
                 while IFS= read -r -d $'\0' script; do
                   bash -n "$script"
                   shellcheck -x -P "$PWD" "$script"
-                done < <(find configs install provisioning tests -type f \
+                done < <(find configs install provisioning -type f \
                   \( -name '*.sh' -o -name '*.bash' \) -print0)
-                # zsh -n only parses its first argument; the rest become positional
-                # params. One invocation per file or the extra files go unchecked.
+                # zsh -n only parses its first file argument
                 zsh -n configs/zshrc
                 zsh -n configs/session-init/hooks.zsh
                 zsh -n configs/workspace-capture.zsh

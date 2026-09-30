@@ -2,21 +2,12 @@ stages:
   - validate
   - privileged-e2e
 
-# One fail-closed gate owns formatting, hadolint, shell syntax/shellcheck for
-# every tracked shell entrypoint, full collector pytest coverage, destructive
-# storage static guards, and a dry-run of the pinned ttyd patch.
 validate:
   stage: validate
   image: nixos/nix:2.31.2@sha256:29fc5fe207f159ceb0143c25c19c774062fee02ce5eda118f3067547b3054894
   script:
     - nix --extra-experimental-features 'nix-command flakes' flake check --print-build-logs
 
-# On the protected default branch and tags, this deliberately blocks a
-# production pipeline until a privileged runner executes the same externally
-# published endpoints students use. It is absent from feature/MR pipelines
-# because the image is large and ordinary shared runners cannot safely expose
-# nested Docker/nftables. `allow_failure: false` keeps the protected release
-# pipeline blocked until this manual job succeeds.
 image-and-network-e2e:
   stage: privileged-e2e
   image: docker:28.3.3-dind@sha256:a56b3bdde89315ed2cc0e4906e582b5033d93bf20d9cb9510c2cdd4e7f7690b1
@@ -28,10 +19,7 @@ image-and-network-e2e:
     DOCKER_BUILDKIT: "1"
   before_script:
     - apk add --no-cache bash curl openssh-client py3-cryptography python3
-    # Run dockerd in this job's own privileged network/mount namespace. Thus
-    # 127.0.0.1 published ports and collector socket bind paths are genuinely
-    # reachable from the test client; a remote DinD service cannot provide
-    # either property.
+    # tests need published ports and socket mounts in the same namespace
     - dockerd --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
     - for i in $(seq 1 90); do docker info >/dev/null 2>&1 && break; sleep 1; done
     - docker info >/dev/null || { cat /tmp/dockerd.log; exit 1; }

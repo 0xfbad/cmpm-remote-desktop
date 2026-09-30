@@ -6,12 +6,13 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 
-# layer 1 - desktop and vnc stack
 RUN if [[ $TARGETARCH != amd64 ]]; then \
         echo "this image currently supports only linux/amd64" >&2; \
         exit 1; \
     fi \
-    && apt-get update && apt-get install -y \
+    && apt-get update --error-on=any \
+    && apt-get full-upgrade -y \
+    && apt-get install -y \
         kali-desktop-xfce \
         xfce4-terminal \
         dbus-x11 \
@@ -37,7 +38,6 @@ RUN if [[ $TARGETARCH != amd64 ]]; then \
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
-# layer 2 - security tools
 RUN apt-get update && apt-get install -y \
         ghidra \
         radare2 \
@@ -133,7 +133,6 @@ RUN apt-get update && apt-get install -y \
     fi \
     && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
 
-# layer 3 - kali metapackages (web, forensics, stego)
 RUN apt-get update && apt-get install -y \
         kali-tools-web \
         kali-tools-forensics \
@@ -141,8 +140,6 @@ RUN apt-get update && apt-get install -y \
         alacritty \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
-
-# layer 4 - manual installs (each its own RUN for caching)
 
 COPY install/install-pwndbg.sh /tmp/
 RUN bash /tmp/install-pwndbg.sh \
@@ -172,17 +169,13 @@ RUN bash /tmp/install-ttyd.sh \
 COPY install/install-zsteg.sh /tmp/
 RUN bash /tmp/install-zsteg.sh && rm /tmp/install-zsteg.sh
 
-# session recorder (own layer so adding it doesn't invalidate the big apt layers)
 RUN apt-get update && apt-get install -y tlog \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
 
-# layer 5 - configs (changes often, near end)
-
 COPY install/install-ublock-origin.sh /tmp/
 RUN bash /tmp/install-ublock-origin.sh && rm /tmp/install-ublock-origin.sh
 
-# firefox - policies, autoconfig, and override kali default bookmarks
 COPY configs/firefox/policies.json /usr/lib/firefox-esr/distribution/policies.json
 COPY configs/firefox/policies.json /usr/share/firefox-esr/distribution/policies.json
 COPY configs/firefox/distribution.ini /usr/lib/firefox-esr/distribution/distribution.ini
@@ -190,10 +183,7 @@ COPY configs/firefox/autoconfig.js /usr/lib/firefox-esr/defaults/pref/autoconfig
 COPY configs/firefox/firefox.cfg /usr/lib/firefox-esr/firefox.cfg
 COPY configs/firefox/distribution.ini /usr/share/firefox-esr/distribution/distribution.ini
 
-# Optional private course CA. Never learn trust from the live TLS endpoint:
-# operators must provide an independently obtained PEM as a BuildKit secret
-# and pin its DER SHA-256 fingerprint. With neither input, private-CA policy is
-# disabled and the browser relies on its normal public trust store.
+# if adding a course ca, get it from an independent source
 ARG UCSC_CA_CERT_SHA256=""
 RUN --mount=type=secret,id=ucsc_ca,required=false \
     set -Eeuo pipefail; \
@@ -215,13 +205,10 @@ RUN --mount=type=secret,id=ucsc_ca,required=false \
         done; \
     fi
 
-# xfce system-wide defaults
 COPY configs/xfce4/ /etc/xdg/xfce4/
 
-# wallpaper
 COPY assets/SlugSec-Community-Banner.png /usr/share/backgrounds/SlugSec-Community-Banner.png
 
-# shell config and mime defaults into skel so useradd -m copies them
 RUN set -Eeuo pipefail; \
     mkdir -p /etc/skel/.config/alacritty /etc/skel/.config/autostart /etc/skel/.cache \
     && for desktop in \
@@ -242,14 +229,13 @@ COPY configs/zshrc /tmp/custom-zshrc
 COPY configs/workspace-capture.zsh /tmp/workspace-capture.zsh
 COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
 COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
-# workspace-capture goes last so its precmd hook is registered after fzf and zoxide
+# the capture precmd hook must follow fzf and zoxide
 RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; \
         cat /tmp/workspace-capture.zsh; } > /etc/skel/.zshrc \
     && rm /tmp/custom-zshrc /tmp/workspace-capture.zsh \
     && zsh -c 'autoload -Uz compinit && compinit -d /etc/skel/.cache/zcompdump'
 
-# noVNC reconnect patch - revert PR 1672 when the packaged source still needs
-# it, accept an already-patched package, and fail on an unexpected source shape
+# retain the reconnect behavior from before upstream change 1672
 RUN target=/usr/share/novnc/app/ui.js \
     && old="if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {" \
     && new="else if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {" \
@@ -263,24 +249,14 @@ RUN target=/usr/share/novnc/app/ui.js \
         exit 1; \
     fi
 
-# session recording. no tlog group repair and no /run/tlog tmpfiles needed:
-# writer=syslog uses no file paths, and /run/tlog must stay absent (its
-# audit-sid lockfile would limit recording to the first terminal) - don't "fix"
+# /run/tlog must stay absent or only the first terminal records
 COPY configs/tlog/tlog-rec-session.conf /etc/tlog/tlog-rec-session.conf
 COPY --chmod=755 configs/setup-recording.sh /usr/local/lib/setup-recording.sh
 
-# entrypoint
 COPY --chmod=755 configs/startup.sh /startup.sh
 COPY --chmod=755 configs/healthcheck.sh /usr/local/bin/remote-desktop-healthcheck
 
-# Kali ships /usr/lib/nmap/nmap with cap_net_admin in its file-permitted set.
-# NET_ADMIN is not in the container bounding set, and for a capability-dumb
-# binary the kernel then fails execve outright, so nmap is unusable in every
-# session. Reduce to the caps the runtime actually grants. Keep cap_net_raw:
-# the /usr/bin/nmap wrapper always passes --privileged for non-root callers,
-# so stripping caps entirely would break the default student invocation
-# instead of fixing it. setcap normalizes the list alphabetically, which is
-# why the readback string is ordered differently from the argument.
+# cap_net_admin is unavailable at runtime, nmap still needs cap_net_raw for --privileged
 RUN dumpcap_path="$(command -v dumpcap)" \
     && setcap cap_net_raw=ep "$dumpcap_path" \
     && getcap "$dumpcap_path" | grep -Fqx "$dumpcap_path cap_net_raw=ep" \
@@ -290,10 +266,16 @@ RUN dumpcap_path="$(command -v dumpcap)" \
     && test ! -s /etc/machine-id \
     && ! compgen -G '/etc/ssh/ssh_host_*_key*' >/dev/null
 
-# Only two labels earn their place: the contract the plugin gates on, and the
-# revision a support request needs to name the build a student is running.
+COPY configs/tealdeer/config.toml /etc/skel/.config/tealdeer/config.toml
+COPY install/prepare-caches.sh /tmp/prepare-caches.sh
+# installers remove apt lists, prepare runtime caches after all installers
+RUN bash /tmp/prepare-caches.sh && rm /tmp/prepare-caches.sh
+
 ARG OCI_REVISION=""
+# weekly rebuilds can change packages without changing the source revision
+ARG OCI_CREATED=""
 LABEL org.opencontainers.image.revision="$OCI_REVISION" \
+      org.opencontainers.image.created="$OCI_CREATED" \
       edu.ucsc.ctfd-remote-desktop.contract="3"
 
 EXPOSE 22 5900 6080 7682
