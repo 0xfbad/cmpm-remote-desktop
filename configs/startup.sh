@@ -5,6 +5,20 @@ state_dir=/var/lib/remote-desktop
 username_file=$state_dir/resolved-username
 lifetime_file=$state_dir/max-lifetime-deadline
 runtime_dir=/run/remote-desktop
+install -d -o root -g root -m 0755 "$runtime_dir"
+exec 9>"$runtime_dir/startup.lock"
+chmod 0600 "$runtime_dir/startup.lock"
+if flock --exclusive --nonblock --conflict-exit-code 75 9; then
+  :
+else
+  lock_status=$?
+  if ((lock_status == 75)); then
+    exit 0
+  fi
+  echo "cannot acquire startup lock" >&2
+  exit "$lock_status"
+fi
+
 startup_pid=$$
 declare -a managed_pids=()
 shutting_down=0
@@ -49,7 +63,6 @@ shutdown() {
 trap 'exit 0' INT TERM
 trap 'shutdown "$?"' EXIT
 
-install -d -o root -g root -m 0755 "$runtime_dir"
 rm -f -- "$runtime_dir/ready" "$runtime_dir"/*.pid
 
 machine_id=
@@ -189,7 +202,7 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
       now=$(date +%s)
       remaining=$((current_deadline - now))
       for threshold in 300 60; do
-        if ((remaining <= threshold)) && [[ ${warned_for[$threshold]:-} != "$current_deadline" ]]; then # each replaced deadline needs a fresh warning
+        if ((remaining <= threshold)) && [[ ${warned_for[$threshold]:-} != "$current_deadline" ]]; then
           warned_for[$threshold]=$current_deadline
           lifetime_warn $((threshold / 60))
         fi
@@ -203,7 +216,7 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
       sleep "$sleep_for"
     done
   }
-  lifetime_watchdog &
+  lifetime_watchdog 9>&- &
   record_pid lifetime "$!"
 fi
 
@@ -222,7 +235,7 @@ if [[ ${ENABLE_WORKSPACE_CONTEXT:-0} == 1 ]]; then
   install -d -o "$USERNAME" -g "$USERNAME" -m 0700 /var/lib/rd-workspace # student writable ai context must stay outside root only account state
 fi
 
-/usr/local/bin/remote-desktop-command-collector &
+/usr/local/bin/remote-desktop-command-collector 9>&- &
 phase_deadline=$((SECONDS + 3))
 while [[ ! -S /run/.session-init.sock ]] && ((SECONDS < phase_deadline)); do
   sleep 0.1
@@ -282,7 +295,7 @@ Xvnc "$DISPLAY" \
   -SecurityTypes VncAuth \
   -PasswordFile "/home/$USERNAME/.vnc/passwd" \
   -geometry "$RESOLUTION" \
-  -depth 24 &
+  -depth 24 9>&- &
 xvnc_pid=$!
 record_pid xvnc "$xvnc_pid"
 
@@ -294,14 +307,14 @@ if [[ ${ENABLE_SSH:-1} != 0 ]]; then
   chmod 0644 "$sshd_config_tmp"
   mv -T "$sshd_config_tmp" /etc/ssh/sshd_config.d/90-remote-desktop.conf
   /usr/sbin/sshd -t
-  /usr/sbin/sshd -D -e &
+  /usr/sbin/sshd -D -e 9>&- &
   record_pid sshd "$!"
 fi
 
 if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
   ttyd -p 7682 -W -O -m 16 -c "$USERNAME:$PASS" -t fontSize=16 \
     -t 'fontFamily=JetBrainsMono Nerd Font Mono, Menlo, Consolas, monospace' \
-    su -l "$USERNAME" &
+    su -l "$USERNAME" 9>&- &
   record_pid ttyd "$!"
 fi
 
@@ -351,7 +364,7 @@ su -l -s /bin/bash "$USERNAME" -c "
   export DISPLAY=$DISPLAY
   export XDG_RUNTIME_DIR=/run/user/$user_id
   exec dbus-launch --exit-with-session xfce4-session
-" &
+" 9>&- &
 xfce_supervisor_pid=$!
 record_pid xfce "$xfce_supervisor_pid"
 
@@ -399,7 +412,7 @@ fi
 
 touch "$runtime_dir/ready" # publish the marker before http can satisfy the plugin readiness probe
 chmod 0644 "$runtime_dir/ready"
-websockify --web /usr/share/novnc 6080 localhost:5900 &
+websockify --web /usr/share/novnc 6080 localhost:5900 9>&- &
 websockify_pid=$!
 record_pid websockify "$websockify_pid"
 
@@ -444,7 +457,7 @@ health_watchdog() {
     fi
   done
 }
-health_watchdog &
+health_watchdog 9>&- &
 record_pid health-watchdog "$!"
 
 echo "remote desktop ready for $USERNAME at $RESOLUTION"
