@@ -82,7 +82,6 @@
                 # zsh -n only parses its first file argument
                 zsh -n configs/zshrc
                 zsh -n configs/session-init/hooks.zsh
-                zsh -n configs/workspace-capture.zsh
                 touch $out
               '';
           python-tests =

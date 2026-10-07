@@ -15,7 +15,6 @@ record_pid() {
   printf '%s\n' "$pid" >"$runtime_dir/$service.pid"
 }
 
-# Invoked by the EXIT trap below.
 # shellcheck disable=SC2329
 shutdown() {
   local exit_code=${1:-0} pid alive
@@ -39,11 +38,8 @@ shutdown() {
       sleep 0.1
     done
     for pid in "${managed_pids[@]}"; do
-      kill -KILL "$pid" 2>/dev/null || true
+      kill -KILL "$pid" 2>/dev/null || true # init reaps remaining children if kernel sleep prevents prompt exit
     done
-    # Do not wait unboundedly after SIGKILL: a task stuck in uninterruptible
-    # kernel sleep cannot be reaped yet. Exiting lets the configured init
-    # process adopt/reap children while Docker tears down the namespace.
   fi
 
   rm -f -- "$runtime_dir"/*.pid
@@ -56,9 +52,6 @@ trap 'shutdown "$?"' EXIT
 install -d -o root -g root -m 0755 "$runtime_dir"
 rm -f -- "$runtime_dir/ready" "$runtime_dir"/*.pid
 
-# A machine identity is generated in the container's writable layer. The image
-# intentionally contains none, so separate student sessions never share it;
-# Docker restart preserves it for a stable identity within one session.
 machine_id=
 if [[ -f /etc/machine-id && ! -L /etc/machine-id ]]; then
   machine_id=$(</etc/machine-id)
@@ -66,7 +59,7 @@ fi
 if [[ ! $machine_id =~ ^[0-9a-f]{32}$ ]]; then
   machine_id_tmp=/etc/machine-id.tmp.$$
   rm -f -- /etc/machine-id "$machine_id_tmp"
-  (umask 022 && dbus-uuidgen >"$machine_id_tmp")
+  (umask 022 && dbus-uuidgen >"$machine_id_tmp") # each writable layer needs its own identity and restarts must retain it
   chmod 0444 "$machine_id_tmp"
   mv -T "$machine_id_tmp" /etc/machine-id
 fi
@@ -94,9 +87,6 @@ if [[ -f $username_file ]]; then
     exit 1
   fi
 else
-  # Sanitize the CTFd display name into a Linux account name. useradd requires
-  # a non-numeric leading character and Linux account names are limited to 32
-  # characters. Names containing no letters or digits use the stable fallback.
   USERNAME=$(
     printf '%s' "${CTFD_USERNAME:-user}" |
       LC_ALL=C tr '[:upper:]' '[:lower:]' |
@@ -107,14 +97,11 @@ else
   *) USERNAME=user ;;
   esac
   case "$USERNAME" in
-  [0-9]*) USERNAME="student_$USERNAME" ;;
+  [0-9]*) USERNAME="student_$USERNAME" ;; # useradd requires a nonnumeric leading character
   esac
-  USERNAME=${USERNAME:0:32}
+  USERNAME=${USERNAME:0:32} # linux account names allow at most 32 characters
 
-  # Never reuse an account baked into the base image: doing so can select a
-  # system UID, the wrong home, or a locked shell. Keep collision handling
-  # deterministic while preserving the student_ prefix and 32-character limit.
-  if id -u -- "$USERNAME" >/dev/null 2>&1 || getent group -- "$USERNAME" >/dev/null 2>&1; then
+  if id -u -- "$USERNAME" >/dev/null 2>&1 || getent group -- "$USERNAME" >/dev/null 2>&1; then # base accounts may have a system uid or locked shell
     username_stem="student_$USERNAME"
     username_stem=${username_stem:0:32}
     USERNAME=$username_stem
@@ -126,17 +113,12 @@ else
     done
   fi
 
-  # Persist before useradd or optional bootstrap. If startup is interrupted,
-  # the next run resumes this exact validated name instead of choosing a new
-  # collision suffix.
   username_file_tmp=$state_dir/resolved-username.tmp.$$
   (umask 077 && printf '%s\n' "$USERNAME" >"$username_file_tmp")
   chown root:root "$username_file_tmp"
-  mv -T "$username_file_tmp" "$username_file"
+  mv -T "$username_file_tmp" "$username_file" # persist before useradd so interrupted startup reuses the same account
 fi
 
-# MAX_LIFETIME is a wall-clock ceiling, not a per-process timer. Persisting its
-# absolute deadline prevents Docker restarts from granting a fresh lifetime.
 lifetime_remaining=
 if [[ -n ${MAX_LIFETIME:-} ]]; then
   if [[ ! $MAX_LIFETIME =~ ^[1-9][0-9]*$ || ${#MAX_LIFETIME} -gt 10 ]]; then
@@ -165,7 +147,7 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
     fi
     lifetime_deadline=$((10#$lifetime_deadline))
   else
-    lifetime_deadline=$(($(date +%s) + lifetime_seconds))
+    lifetime_deadline=$(($(date +%s) + lifetime_seconds)) # restarts must not grant a new lifetime
     lifetime_file_tmp=$state_dir/max-lifetime-deadline.tmp.$$
     (umask 077 && printf '%s\n' "$lifetime_deadline" >"$lifetime_file_tmp")
     chown root:root "$lifetime_file_tmp"
@@ -178,16 +160,9 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
     exit 0
   fi
 
-  # Warn the student before the session is torn down. Expiry TERMs Xvnc along
-  # with everything else, so GUI apps die from X-server loss with nothing
-  # saved; a toast is the only notice they get. Latched on the deadline value,
-  # not a boolean, because the plugin may rewrite the file to credit a hold --
-  # an extended session must warn again before its new deadline.
   lifetime_warn() {
     local minutes=$1 uid
-    # useradd runs after this function is forked, so the account may not exist
-    # yet. Failing to notify must never take the watchdog down with it.
-    uid=$(id -u -- "$USERNAME" 2>/dev/null) || return 0
+    uid=$(id -u -- "$USERNAME" 2>/dev/null) || return 0 # the watchdog can start before useradd
     [[ -n $uid ]] || return 0
     su -l -s /bin/bash "$USERNAME" -c \
       "DISPLAY=:0 notify-send -u critical 'Session ends in ${minutes} minutes'" \
@@ -199,16 +174,12 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
     local -A warned_for=()
     trap - EXIT INT TERM
     while true; do
-      # The plugin may credit a verified evidence-hold interval by replacing
-      # this root-owned file while the cgroup is frozen. Re-read it after every
-      # wake so the extension takes effect before an expired pre-pause deadline
-      # can tear down and auto-remove the preserved writable layer.
       if [[ $(stat -c '%u:%g:%a' -- "$lifetime_file" 2>/dev/null) != 0:0:600 ]]; then
         echo "maximum-lifetime deadline became unsafe" >&2
         kill -TERM "$startup_pid" 2>/dev/null || true
         return
       fi
-      current_deadline=$(<"$lifetime_file")
+      current_deadline=$(<"$lifetime_file") # evidence holds replace this deadline while the container is paused
       if [[ ! $current_deadline =~ ^[1-9][0-9]*$ || ${#current_deadline} -gt 10 ]]; then
         echo "maximum-lifetime deadline became invalid" >&2
         kill -TERM "$startup_pid" 2>/dev/null || true
@@ -218,7 +189,7 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
       now=$(date +%s)
       remaining=$((current_deadline - now))
       for threshold in 300 60; do
-        if ((remaining <= threshold)) && [[ ${warned_for[$threshold]:-} != "$current_deadline" ]]; then
+        if ((remaining <= threshold)) && [[ ${warned_for[$threshold]:-} != "$current_deadline" ]]; then # each replaced deadline needs a fresh warning
           warned_for[$threshold]=$current_deadline
           lifetime_warn $((threshold / 60))
         fi
@@ -227,10 +198,8 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
         kill -TERM "$startup_pid" 2>/dev/null || true
         return
       fi
-      # Recompute the epoch deadline periodically so host suspend and wall-clock
-      # steps cannot extend a continuously running session indefinitely.
       sleep_for=$remaining
-      ((sleep_for > 30)) && sleep_for=30
+      ((sleep_for > 30)) && sleep_for=30 # recalculate after host suspend or clock changes
       sleep "$sleep_for"
     done
   }
@@ -238,7 +207,6 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
   record_pid lifetime "$!"
 fi
 
-# setup-recording selects USER_SHELL before useradd copies the skeleton.
 # shellcheck source=configs/setup-recording.sh
 . /usr/local/lib/setup-recording.sh
 
@@ -250,11 +218,16 @@ else
   usermod -s "$USER_SHELL" "$USERNAME"
 fi
 
-# ENABLE_WORKSPACE_CONTEXT=1 opts in to command capture; absent or any other value is off.
-# Deliberately outside $state_dir, which must stay 0700 root:root.
 if [[ ${ENABLE_WORKSPACE_CONTEXT:-0} == 1 ]]; then
-  install -d -o "$USERNAME" -g "$USERNAME" -m 0700 /var/lib/rd-workspace
+  install -d -o "$USERNAME" -g "$USERNAME" -m 0700 /var/lib/rd-workspace # student writable ai context must stay outside root only account state
 fi
+
+/usr/local/bin/remote-desktop-command-collector &
+phase_deadline=$((SECONDS + 3))
+while [[ ! -S /run/.session-init.sock ]] && ((SECONDS < phase_deadline)); do
+  sleep 0.1
+done
+[[ -S /run/.session-init.sock ]] || echo "command recording is unavailable" >&2
 
 sudoers_tmp=/etc/sudoers.d/90-remote-desktop-user.tmp.$$
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$USERNAME" >"$sudoers_tmp"
@@ -262,12 +235,8 @@ chmod 0440 "$sudoers_tmp"
 visudo -cf "$sudoers_tmp" >/dev/null
 mv -T "$sudoers_tmp" /etc/sudoers.d/90-remote-desktop-user
 
-# Shared password for the Linux user, SSH, and VNC. Compute it once so an
-# unset VNC_PASSWORD does not yield two different random values. An explicitly
-# empty value is invalid rather than an instruction to generate a secret the
-# caller cannot discover.
 if [[ -v VNC_PASSWORD ]]; then
-  PASS=$VNC_PASSWORD
+  PASS=$VNC_PASSWORD # an explicit empty value must not create an undiscoverable random password
 else
   PASS=$(openssl rand -base64 6)
 fi
@@ -305,8 +274,7 @@ printf '%s\n' "$PASS" | tigervncpasswd -f >"/home/$USERNAME/.vnc/passwd"
 chmod 0600 "/home/$USERNAME/.vnc/passwd"
 chown "$USERNAME:$USERNAME" "/home/$USERNAME/.vnc/passwd"
 
-# Docker restart preserves /tmp in the writable layer, but not the X process.
-rm -f -- /tmp/.X0-lock /tmp/.X11-unix/X0
+rm -f -- /tmp/.X0-lock /tmp/.X11-unix/X0 # restarts retain old locks without the x process
 install -d -m 1777 /tmp/.X11-unix
 
 Xvnc "$DISPLAY" \
@@ -318,7 +286,6 @@ Xvnc "$DISPLAY" \
 xvnc_pid=$!
 record_pid xvnc "$xvnc_pid"
 
-# ENABLE_SSH=0 disables SSH; absent or any other value keeps it enabled.
 if [[ ${ENABLE_SSH:-1} != 0 ]]; then
   install -d -m 0755 /run/sshd
   ssh-keygen -A
@@ -331,7 +298,6 @@ if [[ ${ENABLE_SSH:-1} != 0 ]]; then
   record_pid sshd "$!"
 fi
 
-# ENABLE_TTYD=0 disables the browser terminal.
 if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
   ttyd -p 7682 -W -O -m 16 -c "$USERNAME:$PASS" -t fontSize=16 \
     -t 'fontFamily=JetBrainsMono Nerd Font Mono, Menlo, Consolas, monospace' \
@@ -339,8 +305,6 @@ if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
   record_pid ttyd "$!"
 fi
 
-# Wait up to 30 seconds for both externally useful display services. Also
-# detect an early child exit instead of waiting out the full timeout.
 phase_deadline=$((SECONDS + 30))
 while ((SECONDS < phase_deadline)); do
   if [[ -S /tmp/.X11-unix/X0 ]]; then
@@ -357,13 +321,9 @@ done
   exit 1
 }
 
-# Disable screen blanking in the VNC display. TigerVNC exposes no DPMS
-# extension, so -dpms is best effort and must not fail the chain.
 timeout 5 xdpyinfo -display "$DISPLAY" >/dev/null
-timeout 5 /bin/bash -c 'xset s off && xset s noblank && { xset -dpms 2>/dev/null || true; }'
+timeout 5 /bin/bash -c 'xset s off && xset s noblank && { xset -dpms 2>/dev/null || true; }' # tigervnc has no dpms extension
 
-# Pass the session cookie and URL to firefox.cfg and rewrite the static
-# homepage policy to match. Invalid policy JSON is a startup error.
 if [[ -n ${CTFD_URL:-} ]]; then
   for policy in /usr/lib/firefox-esr/distribution/policies.json /usr/share/firefox-esr/distribution/policies.json; do
     if [[ -f $policy ]]; then
@@ -386,10 +346,8 @@ if [[ -n ${CTFD_COOKIE_VALUE:-} && -n ${CTFD_URL:-} ]]; then
   chmod 0600 /tmp/ctfd_auth.json
 fi
 
-# -s /bin/bash bypasses the passwd shell for session bootstrap; SHELL must be
-# reset to the actual zsh/tlog login shell for GUI terminal emulators.
 su -l -s /bin/bash "$USERNAME" -c "
-  export SHELL=$USER_SHELL
+  export SHELL=$USER_SHELL # the bootstrap shell override must not reach gui terminals
   export DISPLAY=$DISPLAY
   export XDG_RUNTIME_DIR=/run/user/$user_id
   exec dbus-launch --exit-with-session xfce4-session
@@ -413,10 +371,7 @@ pgrep -u "$user_id" -x xfce4-session >/dev/null || {
   exit 1
 }
 
-# The session process can appear before the usable desktop has a window manager
-# and panel. Gate readiness on both so the plugin's immediate contract probe
-# cannot race a half-started GUI.
-for gui_process in xfwm4 xfce4-panel; do
+for gui_process in xfwm4 xfce4-panel; do # the session process can exist before a usable desktop
   phase_deadline=$((SECONDS + 30))
   while ((SECONDS < phase_deadline)); do
     if pgrep -u "$user_id" -x "$gui_process" >/dev/null; then
@@ -434,22 +389,15 @@ for gui_process in xfwm4 xfce4-panel; do
   }
 done
 
-# Prove password authentication and sshd privilege separation once before any
-# browser endpoint is published. A banner/PID-only check misses a missing
-# SYS_CHROOT capability and would advertise SSH details that can never work.
 if [[ ${ENABLE_SSH:-1} != 0 ]]; then
   if ! REMOTE_DESKTOP_DEEP_SSH_CHECK=1 \
-    timeout 10 /usr/local/bin/remote-desktop-healthcheck; then
+    timeout 10 /usr/local/bin/remote-desktop-healthcheck; then # a banner alone does not prove ssh privilege separation works
     echo "sshd failed its authenticated startup probe" >&2
     exit 1
   fi
 fi
 
-# noVNC is the plugin's external readiness probe, so expose it only after the
-# real desktop and every other enabled service are alive. The marker is written
-# first: once an HTTP request can succeed, the adaptive health check can also
-# observe the complete ready state without a race.
-touch "$runtime_dir/ready"
+touch "$runtime_dir/ready" # publish the marker before http can satisfy the plugin readiness probe
 chmod 0644 "$runtime_dir/ready"
 websockify --web /usr/share/novnc 6080 localhost:5900 &
 websockify_pid=$!
@@ -501,8 +449,6 @@ record_pid health-watchdog "$!"
 
 echo "remote desktop ready for $USERNAME at $RESOLUTION"
 
-# Any essential child ending (including a normal XFCE logout) ends the whole
-# session. This avoids a running-but-unusable container after a daemon crash.
 if wait -n -p exited_pid "${managed_pids[@]}"; then
   child_status=0
 else

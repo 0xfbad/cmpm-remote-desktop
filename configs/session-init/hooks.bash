@@ -1,63 +1,41 @@
-# bash interactive session hook
-# no-op if the receiver socket doesn't exist
-
-# bail when sourced by a non-bash shell. zsh login shells reach this via
-# /etc/zsh/zprofile -> emulate sh -c '. /etc/profile' -> /etc/profile.d/*.sh
-# and the DEBUG trap installed below leaks past the emulate scope, firing
-# before every simple command including completion internals (60% cpu spin)
 [ -n "${BASH_VERSION:-}" ] || return 0
 [[ $- == *i* ]] || return 0
-
 [[ -S /run/.session-init.sock ]] || return 0
+declare -F __si_prompt >/dev/null && return 0
 
-__si_cmd=""
-__si_ts=0
+__si_history_id=$(HISTTIMEFORMAT='' history 1 2>/dev/null | awk '{print $1; exit}')
 __si_tty=""
-__si_ec=0
-__si_ready=0
-
-__si_debug() {
-  __si_ec=$?
-
-  # re-inject our prompt hook if something overwrote PROMPT_COMMAND
-  case "$PROMPT_COMMAND" in
-  *__si_prompt*) ;;
-  *) PROMPT_COMMAND="__si_prompt" ;;
-  esac
-
-  # skip until first interactive prompt has appeared
-  [[ $__si_ready -eq 0 ]] && return
-  [[ $BASH_COMMAND == "__si_prompt"* ]] && return
-  [[ $BASH_COMMAND == PROMPT_COMMAND=* ]] && return
-  [[ -n $__si_cmd ]] && return
-  # shellcheck disable=SC1007
-  __si_cmd=$(HISTTIMEFORMAT= history 1 2>/dev/null | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')
-  [[ -z $__si_cmd ]] && __si_cmd="$BASH_COMMAND"
-  __si_ts=$(date +%s)
-}
 
 __si_prompt() {
-  local ec=$__si_ec
-  __si_ready=1
-  [[ -z $__si_cmd ]] && return
+  local ec=$? entry id cmd
+  entry=$(HISTTIMEFORMAT='' history 1 2>/dev/null)
+  if [[ ! $entry =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
+    return "$ec"
+  fi
+  id=${BASH_REMATCH[1]}
+  cmd=${BASH_REMATCH[2]}
+  if [[ $id == "$__si_history_id" ]]; then
+    return "$ec"
+  fi
+  __si_history_id=$id
   [[ -z $__si_tty ]] && __si_tty=$(tty 2>/dev/null || echo "?")
-
-  local dur=$(($(date +%s) - __si_ts))
-
   (
     jq -nc \
-      --argjson ts "$__si_ts" \
-      --arg cmd "$__si_cmd" \
+      --argjson ts "$EPOCHREALTIME" \
+      --arg cmd "$cmd" \
       --argjson ec "$ec" \
-      --argjson dur "$dur" \
       --arg cwd "$PWD" \
       --arg tty "$__si_tty" \
-      '{ts:$ts,cmd:$cmd,exit:$ec,dur:$dur,cwd:$cwd,tty:$tty}' |
+      '{ts:$ts,cmd:$cmd,exit:$ec,duration_ms:null,cwd:$cwd,tty:$tty}' |
       socat -u - UNIX-SENDTO:/run/.session-init.sock
   ) 2>/dev/null &
-
-  __si_cmd=""
+  disown "$!" 2>/dev/null || true
+  return "$ec"
 }
 
-trap '__si_debug' DEBUG
-PROMPT_COMMAND="__si_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a"* ]]; then
+  PROMPT_COMMAND=(__si_prompt "${PROMPT_COMMAND[@]}")
+else
+  # shellcheck disable=SC2178,SC2128
+  PROMPT_COMMAND="__si_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+fi

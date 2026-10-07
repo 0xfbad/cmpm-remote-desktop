@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""receives session events on a unix datagram socket, appends to log"""
+import json
 import os
 import sys
 import signal
@@ -18,7 +18,6 @@ def main():
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     sock.bind(SOCK_PATH)
-    # anyone can send, only root can read the socket file
     os.chmod(SOCK_PATH, 0o622)
 
     def shutdown(signum, frame):
@@ -34,11 +33,12 @@ def main():
     with open(LOG_PATH, "a", buffering=1) as f:
         while True:
             try:
-                data = sock.recv(8192)
+                length = sock.recvmsg_into([bytearray(1)], 0, socket.MSG_PEEK | socket.MSG_TRUNC)[0]
+                data = sock.recv(length)
                 if data:
-                    line = data.decode("utf-8", errors="replace").strip()
-                    if line:
-                        f.write(line + "\n")
+                    record = json.loads(data)
+                    if isinstance(record, dict):
+                        f.write(json.dumps(record, ensure_ascii=True) + "\n")
             except (KeyboardInterrupt, SystemExit):
                 break
             except Exception:

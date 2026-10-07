@@ -226,13 +226,15 @@ RUN set -Eeuo pipefail; \
         fi; \
     done
 COPY configs/zshrc /tmp/custom-zshrc
-COPY configs/workspace-capture.zsh /tmp/workspace-capture.zsh
+COPY --chmod=0755 configs/session-init/collector /usr/local/bin/remote-desktop-command-collector
+COPY configs/session-init/hooks.zsh /usr/local/lib/remote-desktop-commands.zsh
+COPY configs/session-init/hooks.bash /usr/local/lib/remote-desktop-commands.bash
 COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
 COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
-# the capture precmd hook must follow fzf and zoxide
 RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; \
-        cat /tmp/workspace-capture.zsh; } > /etc/skel/.zshrc \
-    && rm /tmp/custom-zshrc /tmp/workspace-capture.zsh \
+        printf '\n. /usr/local/lib/remote-desktop-commands.zsh\n'; } > /etc/skel/.zshrc \
+    && printf '\n. /usr/local/lib/remote-desktop-commands.bash\n' >> /etc/bash.bashrc \
+    && rm /tmp/custom-zshrc \
     && zsh -c 'autoload -Uz compinit && compinit -d /etc/skel/.cache/zcompdump'
 
 # retain the reconnect behavior from before upstream change 1672
