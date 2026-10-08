@@ -46,8 +46,7 @@
             hadolint --config ${self}/.hadolint.yaml ${self}/Dockerfile
             touch $out
           '';
-          # xfconf and firefox ignore malformed configuration at runtime
-          config-validation =
+          config-validation = # xfconf and firefox ignore malformed configuration at runtime
             pkgs.runCommand "config-validation"
               {
                 nativeBuildInputs = [
@@ -79,8 +78,7 @@
                   shellcheck -x -P "$PWD" "$script"
                 done < <(find configs install provisioning -type f \
                   \( -name '*.sh' -o -name '*.bash' \) -print0)
-                # zsh -n only parses its first file argument
-                zsh -n configs/zshrc
+                zsh -n configs/zshrc # zsh -n only parses its first file argument
                 zsh -n configs/session-init/hooks.zsh
                 touch $out
               '';
@@ -130,6 +128,10 @@
                   < ${self}/install/ttyd-zero-frame.patch
                 patch --batch --forward --fuzz=0 -d source -p1 \
                   < ${self}/install/ttyd-zero-frame.patch
+                patch --batch --forward --fuzz=0 --dry-run -d source -p1 \
+                  < ${self}/install/ttyd-reconnect.patch
+                patch --batch --forward --fuzz=0 -d source -p1 \
+                  < ${self}/install/ttyd-reconnect.patch
                 touch $out
               '';
           systemd-unit-contracts =
