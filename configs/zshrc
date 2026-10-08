@@ -1,11 +1,68 @@
 
-# eza instead of ls
-alias ls="eza -l --icons"
-alias la="eza -la --icons"
-alias l="eza --icons"
-alias ll="eza -l --icons"
+unalias ls 2>/dev/null
+function ls {
+  emulate -L zsh
+  if [[ -v POSIXLY_CORRECT || -v EZA_STRICT ]]; then
+    command 'ls' --color=auto "$@"
+    return
+  fi
 
-# directory navigation
+  local arg flags flag size=--bytes
+  local -i parsing=1 long=0 reverse=0 recursive=0 directory=0 classify=0
+  local -a operands visibility layout eza_args
+  for arg in "$@"; do
+    if (( parsing )) && [[ "$arg" == -- ]]; then
+      parsing=0
+      continue
+    fi
+    if (( parsing )) && [[ "$arg" == -* && "$arg" != - ]]; then
+      flags=${arg#-}
+      if [[ "$flags" == *[^laAhFrRd1Cx]* ]]; then
+        command 'ls' --color=auto "$@"
+        return
+      fi
+      for flag in ${(s::)flags}; do
+        case "$flag" in
+          l) long=1 ;;
+          a) visibility=(--all --all) ;;
+          A) visibility=(--all) ;;
+          h) size=--binary ;;
+          F) classify=1 ;;
+          r) reverse=1 ;;
+          R) recursive=1 ;;
+          d) directory=1 ;;
+          1) layout=(--oneline) ;;
+          C) long=0; layout=(--grid) ;;
+          x) long=0; layout=(--grid --across) ;;
+        esac
+      done
+      continue
+    fi
+    if [[ -L "$arg" ]]; then
+      command 'ls' --color=auto "$@"
+      return
+    fi
+    operands+=("$arg")
+  done
+
+  eza_args=(--icons=auto "${visibility[@]}")
+  if (( long )); then
+    eza_args+=(--long --links --group "$size")
+  else
+    eza_args+=("${layout[@]}")
+  fi
+  (( classify )) && eza_args+=(--classify=always)
+  (( reverse )) && eza_args+=(--reverse)
+  (( directory )) && eza_args+=(--treat-dirs-as-files)
+  (( recursive && !directory )) && eza_args+=(--recurse)
+  (( ${#operands} )) || operands=(.)
+  command eza "${eza_args[@]}" -- "${operands[@]}"
+}
+
+alias l="ls"
+alias ll="ls -l"
+alias la="ls -la"
+
 alias ..="cd .."
 alias ...="cd ../.."
 alias ....="cd ../../.."
@@ -14,37 +71,28 @@ alias -- -="cd -"
 alias md="mkdir -p"
 alias rd="rmdir"
 
-# directory stack
 alias d="dirs -v"
 for index ({1..9}) alias "$index"="cd -$index"; unset index
 
-# safety nets
 alias cp="cp -i"
 alias mv="mv -i"
 
-# color
 alias grep="grep --color=auto"
 alias fgrep="fgrep --color=auto"
 alias egrep="egrep --color=auto"
 alias diff="diff --color=auto"
 alias ip="ip --color=auto"
 
-# misc
 alias open="xdg-open 2>/dev/null"
 
-# Preserve TLS verification by default. Labs with an intentionally self-signed
-# target can opt in explicitly with `wget-insecure`.
 alias wget="wget --content-disposition"
 alias wget-insecure="wget --no-check-certificate --content-disposition"
 
-# completion caching so tab-complete doesn't hang on first use
 zstyle ':completion:*' use-cache on
 zstyle ':completion:*' cache-path ~/.cache/zsh-completions
 
-# zoxide as cd
 eval "$(zoxide init zsh --cmd cd)"
 
-# fzf
 source <(fzf --zsh 2>/dev/null || true)
 
 PROMPT=$'%F{green}%n@%m%f %F{blue}%(4~|%-1~/.../%2~|%3~)%f\n%F{red}$%f '
