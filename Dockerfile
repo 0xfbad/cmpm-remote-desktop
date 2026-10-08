@@ -271,11 +271,12 @@ RUN target=/usr/share/novnc/app/ui.js \
         exit 1; \
     fi
 
-# /run/tlog must stay absent or only the first terminal records
 COPY configs/tlog/tlog-rec-session.conf /etc/tlog/tlog-rec-session.conf
 COPY --chmod=755 configs/setup-recording.sh /usr/local/lib/setup-recording.sh
 
 COPY --chmod=755 configs/startup.sh /startup.sh
+COPY --chmod=755 configs/browser-terminal.sh /usr/local/bin/browser-terminal
+COPY configs/browser-terminal.conf /usr/local/lib/browser-terminal.conf
 COPY --chmod=755 configs/healthcheck.sh /usr/local/bin/remote-desktop-healthcheck
 
 # cap_net_admin is unavailable at runtime, nmap still needs cap_net_raw for --privileged

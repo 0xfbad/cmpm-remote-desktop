@@ -52,7 +52,7 @@ shutdown() {
       sleep 0.1
     done
     for pid in "${managed_pids[@]}"; do
-      kill -KILL "$pid" 2>/dev/null || true # init reaps remaining children if kernel sleep prevents prompt exit
+      kill -KILL "$pid" 2>/dev/null || true
     done
   fi
 
@@ -192,7 +192,7 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
         kill -TERM "$startup_pid" 2>/dev/null || true
         return
       fi
-      current_deadline=$(<"$lifetime_file") # evidence holds replace this deadline while the container is paused
+      current_deadline=$(<"$lifetime_file") # active evidence holds can change the deadline
       if [[ ! $current_deadline =~ ^[1-9][0-9]*$ || ${#current_deadline} -gt 10 ]]; then
         echo "maximum-lifetime deadline became invalid" >&2
         kill -TERM "$startup_pid" 2>/dev/null || true
@@ -312,9 +312,9 @@ if [[ ${ENABLE_SSH:-1} != 0 ]]; then
 fi
 
 if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
-  ttyd -p 7682 -W -O -m 16 -c "$USERNAME:$PASS" -t fontSize=16 \
-    -t 'fontFamily=JetBrainsMono Nerd Font Mono, Menlo, Consolas, monospace' \
-    su -l "$USERNAME" 9>&- &
+  ttyd -p 7682 -W -O -m 16 -c "$USERNAME:$PASS" \
+    -t disableLeaveAlert=true \
+    su -l "$USERNAME" -s /usr/local/bin/browser-terminal -- "$USER_SHELL" 9>&- &
   record_pid ttyd "$!"
 fi
 

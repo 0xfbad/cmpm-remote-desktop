@@ -2,19 +2,19 @@
 +++ b/html/src/components/terminal/xterm/index.ts
 @@ -23,12 +23,10 @@
  }
- 
+
  enum Command {
 -    // server side
      OUTPUT = '0',
      SET_WINDOW_TITLE = '1',
      SET_PREFERENCES = '2',
- 
+
 -    // client side
      INPUT = '0',
      RESIZE_TERMINAL = '1',
      PAUSE = '2',
 @@ -40,6 +38,7 @@
- 
+
  export interface ClientOptions {
      rendererType: RendererType;
 +    disableReconnect?: boolean;
@@ -23,7 +23,7 @@
      enableZmodem: boolean;
 @@ -89,13 +88,18 @@
      private zmodemAddon?: ZmodemAddon;
- 
+
      private socket?: WebSocket;
 -    private token: string;
 +    private token = '';
@@ -39,12 +39,12 @@
 +    private tokenRequest?: AbortController;
 +    private connectionTimer?: number;
 +    private disposed = false;
- 
+
      private writeFunc = (data: ArrayBuffer) => this.writeData(new Uint8Array(data));
- 
+
 @@ -105,10 +109,27 @@
      ) {}
- 
+
      dispose() {
 +        this.disposed = true;
 +        this.clearConnection();
@@ -68,12 +68,15 @@
          this.disposables.length = 0;
 +        if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
      }
- 
+
      @bind
-@@ -123,19 +144,6 @@
-     }
- 
+@@ -120,19 +141,6 @@
      @bind
+     public sendFile(files: FileList) {
+         this.zmodemAddon?.sendFile(files);
+-    }
+-
+-    @bind
 -    public async refreshToken() {
 -        try {
 -            const resp = await fetch(this.options.tokenUrl);
@@ -84,30 +87,86 @@
 -        } catch (e) {
 -            console.error(`[ttyd] fetch ${this.options.tokenUrl}: `, e);
 -        }
--    }
--
--    @bind
-     private onWindowUnload(event: BeforeUnloadEvent) {
-         event.preventDefault();
-         if (this.socket?.readyState === WebSocket.OPEN) {
-@@ -149,6 +157,7 @@
+     }
+
      @bind
-     public open(parent: HTMLElement) {
+@@ -147,13 +155,34 @@
+     }
+
+     @bind
+-    public open(parent: HTMLElement) {
++    public async open(parent: HTMLElement) {
++        if (this.disposed) return;
++        await document.fonts
++            .load(`${this.options.termOptions.fontSize}px ${this.options.termOptions.fontFamily}`)
++            .catch(() => undefined); // a failed font download still permits the system fallback
++        if (this.disposed) return;
++
++        if (!parent.clientWidth || !parent.clientHeight) {
++            await new Promise<void>(resolve => {
++                const observer = new ResizeObserver(() => {
++                    if (!parent.clientWidth || !parent.clientHeight) return;
++                    finish();
++                });
++                const finish = () => {
++                    observer.disconnect();
++                    resolve();
++                };
++                this.register(toDisposable(finish));
++                observer.observe(parent);
++            });
++            if (this.disposed) return;
++        }
++
          this.terminal = new Terminal(this.options.termOptions);
 +        this.reconnect = !this.parseOptsFromUrlQuery(window.location.search).disableReconnect;
          const { terminal, fitAddon, overlayAddon } = this;
          window.term = terminal as TtydTerminal;
-         window.term.fit = () => {
-@@ -239,20 +248,70 @@
+-        window.term.fit = () => {
+-            this.fitAddon.fit();
+-        };
++        window.term.fit = this.fit;
+
+         terminal.loadAddon(fitAddon);
+         terminal.loadAddon(overlayAddon);
+@@ -164,8 +193,16 @@
      }
- 
+
+     @bind
++    private fit() {
++        if (this.disposed) return;
++        this.terminal.write('', () => {
++            if (!this.disposed) this.fitAddon.fit();
++        }); // resize only after queued output has reached the buffer
++    }
++
++    @bind
+     private initListeners() {
+-        const { terminal, fitAddon, overlayAddon, register, sendData } = this;
++        const { terminal, overlayAddon, register, sendData } = this;
+         register(
+             terminal.onTitleChange(data => {
+                 if (data && data !== '' && !this.titleFixed) {
+@@ -193,7 +230,7 @@
+                 this.overlayAddon?.showOverlay('\u2702', 200);
+             })
+         );
+-        register(addEventListener(window, 'resize', () => fitAddon.fit()));
++        register(addEventListener(window, 'resize', this.fit));
+         register(addEventListener(window, 'beforeunload', this.onWindowUnload));
+     }
+
+@@ -239,20 +276,70 @@
+     }
+
      @bind
 -    public connect() {
 -        this.socket = new WebSocket(this.options.wsUrl, ['tty']);
 -        const { socket, register } = this;
+-
 +    public async connect() {
 +        if (this.disposed) return;
- 
++
 +        this.clearConnection();
 +        const request = new AbortController();
 +        this.tokenRequest = request;
@@ -167,27 +226,27 @@
 +            })
 +        );
      }
- 
+
      @bind
      private onSocketOpen() {
          console.log('[ttyd] websocket connection opened');
 +        this.reconnectKey?.dispose();
 +        this.reconnectKey = undefined;
- 
+
          const { textEncoder, terminal, overlayAddon } = this;
          const msg = JSON.stringify({ AuthToken: this.token, columns: terminal.cols, rows: terminal.rows });
-@@ -266,7 +325,6 @@
+@@ -266,7 +353,6 @@
              this.opened = true;
          }
- 
+
 -        this.doReconnect = this.reconnect;
          this.initListeners();
          terminal.focus();
      }
-@@ -275,26 +333,45 @@
+@@ -275,26 +361,45 @@
      private onSocketClose(event: CloseEvent) {
          console.log(`[ttyd] websocket connection closed with code: ${event.code}`);
- 
+
 -        const { refreshToken, connect, doReconnect, overlayAddon } = this;
 -        overlayAddon.showOverlay('Connection Closed');
 -        this.dispose();
@@ -207,6 +266,7 @@
 -                }
 -            });
 -            overlayAddon.showOverlay('Press ⏎ to Reconnect');
+-        }
 +        this.clearConnection();
 +        if ([1006, 1011, 1012, 1013].includes(event.code)) this.scheduleReconnect();
 +        else this.waitForReconnect();
@@ -217,7 +277,7 @@
 +        if (!this.reconnect || this.reconnectAttempts >= 6) {
 +            this.waitForReconnect();
 +            return;
-         }
++        }
 +
 +        const baseDelay = [1000, 2000, 4000, 8000, 10000, 10000][this.reconnectAttempts++];
 +        const delay = baseDelay + Math.random() * 1000;
@@ -247,10 +307,10 @@
 +        this.connectionTimer = undefined;
 +        this.reconnectAttempts = 0;
      }
- 
+
      @bind
-@@ -306,7 +383,7 @@
- 
+@@ -306,7 +411,7 @@
+
          for (const [k, queryVal] of queryObj) {
              let v = clientOptions[k];
 -            if (v === undefined) v = terminal.options[k];
@@ -258,15 +318,15 @@
              switch (typeof v) {
                  case 'boolean':
                      prefs[k] = queryVal === 'true' || queryVal === '1';
-@@ -340,6 +417,7 @@
- 
+@@ -340,6 +445,7 @@
+
          switch (cmd) {
              case Command.OUTPUT:
 +                this.markConnected();
                  this.writeFunc(data);
                  break;
              case Command.SET_WINDOW_TITLE:
-@@ -352,6 +430,7 @@
+@@ -352,6 +458,7 @@
                      ...JSON.parse(textDecoder.decode(data)),
                      ...this.parseOptsFromUrlQuery(window.location.search),
                  } as Preferences);
@@ -274,7 +334,16 @@
                  break;
              default:
                  console.warn(`[ttyd] unknown command: ${cmd}`);
-@@ -397,7 +476,6 @@
+@@ -361,7 +468,7 @@
+
+     @bind
+     private applyPreferences(prefs: Preferences) {
+-        const { terminal, fitAddon, register } = this;
++        const { terminal, register } = this;
+         if (prefs.enableZmodem || prefs.enableTrzsz) {
+             this.zmodemAddon = new ZmodemAddon({
+                 zmodem: prefs.enableZmodem,
+@@ -397,7 +504,6 @@
                      if (value) {
                          console.log('[ttyd] Reconnect disabled');
                          this.reconnect = false;
@@ -282,42 +351,66 @@
                      }
                      break;
                  case 'enableZmodem':
-@@ -459,17 +537,19 @@
+@@ -446,7 +552,7 @@
+                     } else {
+                         terminal.options[key] = value;
+                     }
+-                    if (key.indexOf('font') === 0) fitAddon.fit();
++                    if (key.indexOf('font') === 0) this.fit();
+                     break;
+             }
+         }
+@@ -459,17 +565,19 @@
              try {
                  this.canvasAddon?.dispose();
              } catch {
 -                // ignore
+-            }
+-            this.canvasAddon = undefined;
 +                return;
 +            } finally {
 +                this.canvasAddon = undefined;
-             }
--            this.canvasAddon = undefined;
++            }
          };
          const disposeWebglRenderer = () => {
              try {
                  this.webglAddon?.dispose();
              } catch {
 -                // ignore
+-            }
+-            this.webglAddon = undefined;
 +                return;
 +            } finally {
 +                this.webglAddon = undefined;
-             }
--            this.webglAddon = undefined;
++            }
          };
          const enableCanvasRenderer = () => {
              if (this.canvasAddon) return;
 --- a/html/src/components/terminal/index.tsx
 +++ b/html/src/components/terminal/index.tsx
-@@ -22,8 +22,7 @@
-         this.xterm = new Xterm(props, this.showModal);
+@@ -23,8 +23,7 @@
      }
- 
--    async componentDidMount() {
+
+     async componentDidMount() {
 -        await this.xterm.refreshToken();
-+    componentDidMount() {
-         this.xterm.open(this.container);
+-        this.xterm.open(this.container);
++        await this.xterm.open(this.container);
          this.xterm.connect();
      }
+
+--- a/html/src/components/app.tsx
++++ b/html/src/components/app.tsx
+@@ -20,8 +20,8 @@
+     unicodeVersion: '11',
+ } as ClientOptions;
+ const termOptions = {
+-    fontSize: 13,
+-    fontFamily: 'Consolas,Liberation Mono,Menlo,Courier,monospace',
++    fontSize: 16,
++    fontFamily: 'JetBrainsMono Nerd Font Mono, Menlo, Consolas, monospace',
+     theme: {
+         foreground: '#d2d2d2',
+         background: '#2b2b2b',
 --- a/html/tsconfig.json
 +++ b/html/tsconfig.json
 @@ -1,6 +1,7 @@
