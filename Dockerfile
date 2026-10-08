@@ -201,6 +201,7 @@ COPY configs/firefox/distribution.ini /usr/lib/firefox-esr/distribution/distribu
 COPY configs/firefox/autoconfig.js /usr/lib/firefox-esr/defaults/pref/autoconfig.js
 COPY configs/firefox/firefox.cfg /usr/lib/firefox-esr/firefox.cfg
 COPY configs/firefox/distribution.ini /usr/share/firefox-esr/distribution/distribution.ini
+COPY configs/ssh_config.d/90-remote-desktop.conf /etc/ssh/ssh_config.d/90-remote-desktop.conf
 
 # if adding a course ca, get it from an independent source
 ARG UCSC_CA_CERT_SHA256=""
