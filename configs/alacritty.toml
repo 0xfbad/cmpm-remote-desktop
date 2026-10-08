@@ -36,6 +36,9 @@ white   = "#e5e5e5"
 [scrolling]
 history = 100000
 
+[keyboard]
+bindings = [{ key = "V", mods = "Control", mode = "~Vi", action = "Paste" }]
+
 [terminal.shell]
 program = "/bin/zsh"
 args = ["-l"]
