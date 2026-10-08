@@ -1,5 +1,23 @@
 # syntax=docker/dockerfile:1.23.0@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
 # check=error=true
+FROM node:22.20.0-bookworm-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e AS ttyd-client
+ADD --checksum=sha256:039dd995229377caee919898b7bd54484accec3bba49c118e2d5cd6ec51e3650 \
+    https://github.com/tsl0922/ttyd/archive/refs/tags/1.7.7.tar.gz /tmp/ttyd.tar.gz
+ADD --checksum=sha256:fed258a3f5ab5e1fe42a3cea0843b902d54dd58a982cfa75a9b43a51707d99e2 \
+    https://registry.npmjs.org/@yarnpkg/cli-dist/-/cli-dist-3.6.3.tgz /tmp/yarn.tgz
+RUN apt-get update && apt-get install -y --no-install-recommends patch \
+    && rm -rf /var/lib/apt/lists/* \
+    && tar -xzf /tmp/ttyd.tar.gz -C /tmp \
+    && mkdir /tmp/yarn && tar -xzf /tmp/yarn.tgz -C /tmp/yarn
+COPY install/ttyd-reconnect.patch /tmp/
+WORKDIR /tmp/ttyd-1.7.7/html
+RUN patch --batch --forward --fuzz=0 -d .. -p1 </tmp/ttyd-reconnect.patch \
+    && node /tmp/yarn/package/bin/yarn.js install --immutable \
+    && node /tmp/yarn/package/bin/yarn.js exec tsc --noEmit \
+    && node /tmp/yarn/package/bin/yarn.js exec eslint \
+        src/components/terminal/xterm/index.ts src/components/terminal/index.tsx \
+    && node /tmp/yarn/package/bin/yarn.js build
+
 FROM kalilinux/kali-rolling@sha256:ed99295a386abde2fb31e01a441b7c2800d9bcf19a20028b77d642c3ef068363
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -161,9 +179,10 @@ RUN bash /tmp/install-zellij.sh && rm /tmp/install-zellij.sh
 COPY install/install-nerd-font.sh /tmp/
 RUN bash /tmp/install-nerd-font.sh && rm /tmp/install-nerd-font.sh
 
+COPY --from=ttyd-client /tmp/ttyd-1.7.7/src/html.h /tmp/ttyd-html.h
 COPY install/install-ttyd.sh install/ttyd-zero-frame.patch /tmp/
 RUN bash /tmp/install-ttyd.sh \
-    && rm /tmp/install-ttyd.sh /tmp/ttyd-zero-frame.patch \
+    && rm /tmp/install-ttyd.sh /tmp/ttyd-zero-frame.patch /tmp/ttyd-html.h \
     && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
 
 COPY install/install-zsteg.sh /tmp/
