@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Behavioral regression coverage for the non-destructive install transaction.
-# All filesystem writes are redirected under a fresh test root and Docker/
-# systemd commands are fakes; no host daemon or unit is touched.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -40,6 +37,11 @@ cat >"$FAKE_BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 printf 'docker %s\n' "$*" >>"$RD_TEST_CALL_LOG"
 case "${1:-}" in
+info)
+  [[ ${2:-} == --format && ${3:-} == '{{.Driver}}' ]] || exit 2
+  [[ ${RD_TEST_DOCKER_INFO_FAIL:-0} == 0 ]] || exit 1
+  printf '%s\n' "${RD_TEST_STORAGE_DRIVER-overlay2}"
+  ;;
 ps)
   [[ ! -s ${RD_TEST_RUNNING_CONTAINERS:-/dev/null} ]] || cat "$RD_TEST_RUNNING_CONTAINERS"
   ;;
@@ -75,8 +77,7 @@ cat >"$FAKE_BIN/chown" <<'EOF'
 exit 0
 EOF
 for helper in dockerd docker systemctl chown; do
-  # Nix build sandboxes intentionally have no /usr/bin/env; point generated
-  # fakes at the exact Bash that is running this regression.
+  # nix sandboxes require the running bash path instead of /usr/bin/env
   sed -i "1c #!$BASH" "$FAKE_BIN/$helper"
   chmod 0755 "$FAKE_BIN/$helper"
 done
@@ -91,36 +92,63 @@ run_install() {
   bash "$INSTALL" "$@"
 }
 
-# Default behavior applies a real configuration change but never restarts.
 run_install >/dev/null
 grep -Fqx 'systemctl restart docker.service' "$CALL_LOG" &&
   fail "default install restarted Docker"
 [[ -s $TEST_ROOT/etc/docker/daemon.json ]] || fail "daemon.json was not installed"
 
-# A restart request is change-sensitive: semantically identical JSON must not
-# cause either a drain query or a daemon restart.
 : >"$CALL_LOG"
 run_install --restart-docker >/dev/null
 grep -Fq 'docker ps ' "$CALL_LOG" && fail "unchanged config ran the drain probe"
 grep -Fqx 'systemctl restart docker.service' "$CALL_LOG" &&
   fail "unchanged config restarted Docker"
 
-# Exercise rollback for both owned Docker files. The first restart fails; the
-# recovery restart succeeds, but install still reports failure after restoring
-# byte-for-byte prior daemon.json and drop-in contents.
+export RD_STORAGE_TEST_DATA_ROOT=/srv/rd-docker
+: >"$CALL_LOG"
+run_install --with-storage-opts >/dev/null
+jq -e '."storage-opts" == ["overlay2.size=20G"]' "$TEST_ROOT/etc/docker/daemon.json" >/dev/null ||
+  fail "classic overlay2 did not install the requested storage option"
+grep -Fqx 'RequiresMountsFor=/srv/rd-docker' \
+  "$TEST_ROOT/etc/systemd/system/docker.service.d/10-rd-storage-interlock.conf" ||
+  fail "classic overlay2 did not install the mount interlock"
+grep -Fqx 'systemctl restart docker.service' "$CALL_LOG" &&
+  fail "storage option install restarted Docker without a restart request"
+
 daemon_json=$TEST_ROOT/etc/docker/daemon.json
 dropin=$TEST_ROOT/etc/systemd/system/docker.service.d/10-rd-storage-interlock.conf
 jq '."log-opts"."max-size" = "25m"' "$daemon_json" >"$TEST_DIR/daemon-old.json"
 mv -f -- "$TEST_DIR/daemon-old.json" "$daemon_json"
 mkdir -p "${dropin%/*}"
-printf '%s\n' '# pre-existing operator drop-in' '[Unit]' 'RequiresMountsFor=/old/docker-root' >"$dropin"
+printf '%s\n' '[Unit]' 'RequiresMountsFor=/old/docker-root' >"$dropin"
 cp -- "$daemon_json" "$TEST_DIR/daemon.expected"
 cp -- "$dropin" "$TEST_DIR/dropin.expected"
+
+for driver_case in overlayfs empty failed; do
+  export RD_TEST_DOCKER_INFO_FAIL=0
+  case "$driver_case" in
+  overlayfs) export RD_TEST_STORAGE_DRIVER=overlayfs ;;
+  empty) export RD_TEST_STORAGE_DRIVER= ;;
+  failed) export RD_TEST_DOCKER_INFO_FAIL=1 ;;
+  esac
+  : >"$CALL_LOG"
+  if run_install --with-storage-opts --restart-docker >"$TEST_DIR/driver-refusal.log" 2>&1; then
+    fail "storage option install accepted the $driver_case storage probe"
+  fi
+  cmp -s -- "$TEST_DIR/daemon.expected" "$daemon_json" ||
+    fail "$driver_case storage probe changed daemon.json"
+  cmp -s -- "$TEST_DIR/dropin.expected" "$dropin" ||
+    fail "$driver_case storage probe changed the mount interlock"
+  grep -Eq '^(systemctl|dockerd) ' "$CALL_LOG" &&
+    fail "$driver_case storage probe reached configuration or service work"
+  grep -Eq 'storage-opts require classic overlay2|cannot query .*storage driver' "$TEST_DIR/driver-refusal.log" ||
+    fail "$driver_case storage probe failed outside the storage driver check"
+done
+unset RD_TEST_DOCKER_INFO_FAIL RD_TEST_STORAGE_DRIVER
+
 : >"$CALL_LOG"
 fail_once=$TEST_DIR/fail-restart-once
 : >"$fail_once"
 export RD_TEST_FAIL_RESTART_ONCE=$fail_once
-export RD_STORAGE_TEST_DATA_ROOT=/srv/rd-docker
 if run_install --with-storage-opts --restart-docker >/dev/null 2>&1; then
   fail "install succeeded after a simulated failed configuration restart"
 fi
@@ -132,7 +160,6 @@ cmp -s -- "$TEST_DIR/dropin.expected" "$dropin" ||
   fail "failed restart did not make exactly one recovery attempt"
 unset RD_TEST_FAIL_RESTART_ONCE
 
-# A non-empty host is rejected before either Docker config file changes.
 jq '."log-opts"."max-size" = "10m"' "$daemon_json" >"$TEST_DIR/daemon-busy.json"
 mv -f -- "$TEST_DIR/daemon-busy.json" "$daemon_json"
 cp -- "$daemon_json" "$TEST_DIR/daemon.busy.expected"

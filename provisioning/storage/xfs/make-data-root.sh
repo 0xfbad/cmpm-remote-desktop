@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Builds an XFS docker data-root with project quotas (required for
-# overlay2 storage-opt size). Two modes:
-#   make-data-root.sh [--force] DEVICE [MOUNTPOINT]
-#       Real device: mkfs.xfs -m crc=1 -n ftype=1, fstab entry with prjquota,
-#       mount. --force only permits mkfs.xfs -f on that exact block device;
-#       it never bypasses in-use device or mountpoint safety checks.
-#   make-data-root.sh --loopback FILE SIZE [MOUNTPOINT]
-#       Test mode: PREALLOCATED (fallocate, not sparse) image + losetup +
-#       mkfs.xfs + mount -o prjquota. No fstab entry (not boot-persistent).
-# Default MOUNTPOINT: /var/lib/docker. Root required.
 set -euo pipefail
 
 usage() {
@@ -70,9 +60,7 @@ DOCKER_MONITOR_SERVICES=(rd-io-tripwire.service rd-telemetry.service)
 quiesce_docker_monitoring() {
   local load_state mask_state service timer
 
-  # These timers historically pulled docker.service in through their monitor
-  # services. Runtime-mask both names even on a fresh host, then stop any
-  # in-flight monitor, so an old installed unit cannot race the checks below.
+  # installed monitors can start docker while the device checks run
   systemctl mask --runtime --now "${DOCKER_MONITOR_TIMERS[@]}" >/dev/null ||
     fail "cannot runtime-mask Docker monitoring timers"
   for timer in "${DOCKER_MONITOR_TIMERS[@]}"; do
@@ -124,8 +112,7 @@ preflight_mountpoint() {
     fail "mountpoint is already mounted: $mountpoint"
   fi
 
-  # Refuse even a matching-looking entry: a subsequent format changes UUID,
-  # so reusing it implicitly could leave an ambiguous or stale boot mount.
+  # formatting changes the uuid stored by existing fstab entries
   target_source=$(findmnt -srne -M "$mountpoint" -o SOURCE 2>/dev/null || true)
   [ -z "$target_source" ] ||
     fail "fstab already has an entry for mountpoint $mountpoint ($target_source)"
@@ -213,14 +200,13 @@ if [ "$LOOPBACK" -eq 1 ]; then
   }
   trap cleanup_loopback EXIT
 
-  # Preallocated, not sparse: a sparse image full of quota'd writes can
-  # still ENOSPC the backing filesystem out from under dockerd.
+  # sparse images can exhaust the backing filesystem before quotas
   (umask 077 && fallocate -l "$size" "$img")
   image_created=1
 
   loopdev=$(losetup --find --show -- "$img")
   docker_must_be_stopped
-  mkfs.xfs -m crc=1 -n ftype=1 "$loopdev"
+  mkfs.xfs -K -m crc=1 -n ftype=1 "$loopdev" # formatting discard releases backing file preallocation
   mkdir -p "$mountpoint"
   docker_must_be_stopped
   mount -o prjquota -- "$loopdev" "$mountpoint"
@@ -234,7 +220,6 @@ if [ "$LOOPBACK" -eq 1 ]; then
   exit 0
 fi
 
-# --- real device mode -----------------------------------------------------
 if [ "${#args[@]}" -lt 1 ] || [ "${#args[@]}" -gt 2 ]; then
   usage >&2
   exit 2
@@ -257,9 +242,7 @@ quiesce_docker_monitoring
 docker_must_be_stopped
 preflight_mountpoint
 
-# Inspect the selected device and every descendant. Selecting a whole disk
-# must not evade checks merely because its partition, swap, fstab reference,
-# open handle, or holder has another pathname.
+# mounted partitions can make an otherwise unused parent device unsafe
 mapfile -t block_paths < <(lsblk -nrpo NAME "$device")
 [ "${#block_paths[@]}" -gt 0 ] || fail "cannot inspect block-device tree: $device"
 if lsblk -nrpo MOUNTPOINTS "$device" 2>/dev/null | grep -q '[^[:space:]]'; then
@@ -281,24 +264,19 @@ for block_path in "${block_paths[@]}"; do
       fail "$block_path is active swap"
   done
 
-  # Refuse dm-crypt, LVM, mdraid, and similar consumers. --force is
-  # intentionally not consulted by any in-use check.
   block_name=${block_path##*/}
+  # --force permits existing filesystems but never active consumers
   if compgen -G "/sys/class/block/$block_name/holders/*" >/dev/null; then
     fail "$block_path has active block-device holders (dm-crypt, LVM, mdraid, or similar)"
   fi
 
-  # findmnt resolves UUID=/LABEL= entries. Check every descendant, not only
-  # the spelling supplied on the command line.
+  # fstab aliases must resolve to the same device before formatting
   fstab_targets=$(findmnt -srne -S "$block_path" -o TARGET 2>/dev/null || true)
   [ -z "$fstab_targets" ] ||
     fail "fstab already references $block_path (target: $fstab_targets)"
 done
 
-# `blkid TYPE` on a whole disk does not report its partition table or child
-# filesystems. Never let even --force silently widen from "this filesystem"
-# to "erase every partition"; operators must select a leaf partition or
-# explicitly wipe a reviewed partition table outside this helper first.
+# formatting a parent device can erase unrelated child filesystems
 partition_table=$(lsblk -dnro PTTYPE "$device" 2>/dev/null || true)
 if [ -n "$partition_table" ] || [ "${#block_paths[@]}" -ne 1 ]; then
   fail "$device contains a partition table or child block devices; select a leaf device"
@@ -340,9 +318,8 @@ mount -o prjquota -- "$device" "$mountpoint"
 real_mounted=1
 verify_xfs_mount
 
-# Only make the mount boot-persistent after format, mount, quota, and ftype
-# verification have all succeeded. Replace fstab atomically on its filesystem.
 [ ! -L /etc/fstab ] || fail "/etc/fstab may not be a symlink"
+# failed mount verification must never leave a boot entry
 fstab_candidate=$(mktemp /etc/.fstab.rd-storage.XXXXXX)
 if [ -e /etc/fstab ]; then
   [ -f /etc/fstab ] || fail "/etc/fstab is not a regular file"

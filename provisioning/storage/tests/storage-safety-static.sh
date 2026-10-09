@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Non-destructive regression checks for the storage provisioning guardrails.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -84,9 +83,9 @@ assert_contains "$MAKE_ROOT" '--force is only valid for formatting an exact bloc
 assert_contains "$MAKE_ROOT" 'systemctl mask --runtime --now.*DOCKER_MONITOR_TIMERS'
 assert_contains "$MAKE_ROOT" 'rd-io-tripwire\.timer rd-telemetry\.timer'
 assert_contains "$MAKE_ROOT" 'systemctl stop .*service'
+assert_contains "$MAKE_ROOT" '^[[:space:]]+mkfs\.xfs -K '
 
-# Every format and mount command must be immediately preceded by a fresh
-# Docker-down check, after the long-running block-device checks have completed.
+# docker can start during the device checks before a destructive call
 while IFS=: read -r operation_line _; do
   previous_line=$(sed -n "$((operation_line - 1))p" "$MAKE_ROOT")
   [[ $previous_line =~ ^[[:space:]]*docker_must_be_stopped[[:space:]]*$ ]] ||

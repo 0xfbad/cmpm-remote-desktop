@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Installs rd storage provisioning: daemon.json log caps (merged, never
-# clobbered), rd-io-tripwire units/env/script, and — RUNNER-ONLY, behind
-# --with-storage-opts — daemon-wide overlay2.size plus the data-root mount
-# interlock. Idempotent; must run as root.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -111,16 +107,22 @@ fail() {
   exit 1
 }
 
+if [ "$WITH_STORAGE_OPTS" -eq 1 ]; then
+  command -v docker >/dev/null 2>&1 || fail "docker is required to discover the active storage driver"
+  storage_driver=$(docker info --format '{{.Driver}}' 2>/dev/null) ||
+    fail "cannot query the running Docker daemon for its storage driver"
+  [ "$storage_driver" = overlay2 ] ||
+    fail "storage-opts require classic overlay2, found ${storage_driver:-unknown}"
+fi
+
 DATA_ROOT=
 preflight_storage_opts() {
   local mount_target fs_type fs_root mount_opts xfs_metadata mount_source data_device root_device
 
-  command -v docker >/dev/null 2>&1 || fail "docker is required to discover the active data-root"
   command -v findmnt >/dev/null 2>&1 || fail "findmnt is required for storage preflight"
   command -v xfs_info >/dev/null 2>&1 || fail "xfs_info is required for storage preflight"
 
-  # Ask the running daemon instead of guessing from daemon.json: command-line
-  # flags and service overrides may select a different data-root.
+  # service flags can override the configured data root
   DATA_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) ||
     fail "cannot query the running Docker daemon for its active data-root"
   [ -n "$DATA_ROOT" ] || fail "Docker reported an empty data-root"
@@ -130,9 +132,7 @@ preflight_storage_opts() {
   *[[:space:]]*) fail "Docker data-root may not contain whitespace: $DATA_ROOT" ;;
   esac
 
-  # -M requires DATA_ROOT itself to be a mountpoint. A filesystem merely
-  # containing /var/lib/docker is not dedicated and could hide Docker data if
-  # the intended mount disappears.
+  # a missing docker mount must never fall back to the root filesystem
   mount_target=$(findmnt -rn -M "$DATA_ROOT" -o TARGET 2>/dev/null) ||
     fail "active Docker data-root is not a dedicated mountpoint: $DATA_ROOT"
   mount_target=$(realpath -e -- "$mount_target") || fail "cannot resolve data-root mountpoint"
@@ -174,12 +174,9 @@ preflight_storage_opts() {
 if [ "$WITH_STORAGE_OPTS" -eq 1 ] && [ -n "$INSTALL_ROOT" ]; then
   DATA_ROOT=${RD_STORAGE_TEST_DATA_ROOT:?RD_STORAGE_TEST_DATA_ROOT is required with --with-storage-opts in test mode}
 elif [ "$WITH_STORAGE_OPTS" -eq 1 ]; then
-  # This must precede every daemon.json backup/write and every systemd drop-in
-  # change. A failed runner preflight is therefore completely non-mutating.
   preflight_storage_opts
 fi
 
-# --- Docker config transaction -------------------------------------------
 DAEMON_JSON=$INSTALL_ROOT/etc/docker/daemon.json
 DAEMON_DIR=${DAEMON_JSON%/*}
 DROPIN_DIR=$INSTALL_ROOT/etc/systemd/system/docker.service.d
@@ -207,8 +204,6 @@ if [ -e "$DAEMON_JSON" ] || [ -L "$DAEMON_JSON" ]; then
     fail "$DAEMON_JSON must be a regular file, not a symlink"
 fi
 
-# Log caps always. Unrelated keys (e.g. default-address-pools, owned by the
-# network provisioning) pass through untouched.
 if [ -f "$DAEMON_JSON" ]; then
   jq -e 'type == "object"' "$DAEMON_JSON" >/dev/null ||
     fail "$DAEMON_JSON must contain one valid JSON object"
@@ -229,10 +224,8 @@ if [ "$WITH_STORAGE_OPTS" -eq 1 ]; then
   next_candidate=
 fi
 
-# Validate the completed candidate twice: jq gives a clear structural check;
-# dockerd catches valid JSON containing unknown, conflicting, or ill-typed
-# daemon settings. Nothing under /etc has been replaced at this point.
 jq -e 'type == "object"' "$candidate" >/dev/null || fail "generated daemon.json is invalid"
+# dockerd rejects settings that pass json syntax validation
 dockerd --validate --config-file "$candidate" >/dev/null ||
   fail "dockerd rejected generated daemon.json; existing configuration was not changed"
 
@@ -241,9 +234,6 @@ if [ -f "$DAEMON_JSON" ] && jq -e --slurp '.[0] == .[1]' "$DAEMON_JSON" "$candid
   daemon_changed=0
 fi
 
-# Build and compare the runner-only drop-in before mutating either Docker
-# configuration file. Whitespace changes count here because it is a tiny,
-# fully owned file; daemon.json comparison above is semantic JSON equality.
 dropin_changed=0
 if [ "$WITH_STORAGE_OPTS" -eq 1 ]; then
   install -d "$DROPIN_DIR"
@@ -286,8 +276,6 @@ if [ "$RESTART_DOCKER" -eq 1 ] && [ "$docker_config_changed" -eq 1 ] &&
   docker_is_drained || fail "Docker restart preflight failed before configuration was changed"
 fi
 
-# Capture exact prior state for restart rollback, then install only files whose
-# effective contents changed.
 daemon_existed=0
 if [ "$daemon_changed" -eq 1 ]; then
   if [ -f "$DAEMON_JSON" ]; then
@@ -348,12 +336,10 @@ restore_docker_configuration() {
   systemctl daemon-reload
 }
 
-# --- tripwire script + units + env ----------------------------------------
 install -d "$INSTALL_ROOT/usr/local/lib" "$INSTALL_ROOT/etc/systemd/system"
 install -m 0755 "$HERE/bin/rd-io-tripwire.sh" "$INSTALL_ROOT/usr/local/lib/rd-io-tripwire.sh"
 install -m 0644 "$HERE/systemd/rd-io-tripwire.service" "$INSTALL_ROOT/etc/systemd/system/rd-io-tripwire.service"
 install -m 0644 "$HERE/systemd/rd-io-tripwire.timer" "$INSTALL_ROOT/etc/systemd/system/rd-io-tripwire.timer"
-# Preserve local tuning on re-runs.
 if [ ! -f "$INSTALL_ROOT/etc/default/rd-io-tripwire" ]; then
   install -D -m 0644 "$HERE/default/rd-io-tripwire" "$INSTALL_ROOT/etc/default/rd-io-tripwire"
 fi
@@ -375,8 +361,7 @@ elif [ "$RESTART_DOCKER" -eq 0 ]; then
 elif [ "$docker_was_active" -eq 0 ]; then
   echo "install.sh: Docker configuration changed, but Docker is inactive; leaving it stopped"
 else
-  # Close the small mutation window: a new workload may have appeared after
-  # the preflight. In that case restore the old files instead of disrupting it.
+  # containers can appear between the initial check and the restart
   if ! docker_is_drained; then
     restore_docker_configuration ||
       fail "Docker became busy and automatic configuration rollback failed"
