@@ -188,7 +188,7 @@ RUN bash /tmp/install-ttyd.sh \
 COPY install/install-zsteg.sh /tmp/
 RUN bash /tmp/install-zsteg.sh && rm /tmp/install-zsteg.sh
 
-RUN apt-get update && apt-get install -y tlog \
+RUN apt-get update && apt-get install -y tlog python3-prompt-toolkit \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
 
@@ -246,12 +246,14 @@ RUN set -Eeuo pipefail; \
         fi; \
     done
 COPY configs/zshrc /tmp/custom-zshrc
+COPY --chmod=0755 configs/ssh-askpass.py /usr/local/bin/ssh-askpass-terminal
 COPY --chmod=0755 configs/session-init/collector /usr/local/bin/remote-desktop-command-collector
 COPY configs/session-init/hooks.zsh /usr/local/lib/remote-desktop-commands.zsh
 COPY configs/session-init/hooks.bash /usr/local/lib/remote-desktop-commands.bash
 COPY configs/mimeapps.list /etc/skel/.config/mimeapps.list
 COPY configs/alacritty.toml /etc/skel/.config/alacritty/alacritty.toml
-RUN { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; \
+RUN python3 -c 'from pathlib import Path; compile(Path("/usr/local/bin/ssh-askpass-terminal").read_bytes(), "ssh-askpass-terminal", "exec")' \
+    && { cat /etc/zsh/newuser.zshrc.recommended 2>/dev/null; cat /tmp/custom-zshrc; \
         printf '\n. /usr/local/lib/remote-desktop-commands.zsh\n'; } > /etc/skel/.zshrc \
     && printf '\n. /usr/local/lib/remote-desktop-commands.bash\n' >> /etc/bash.bashrc \
     && rm /tmp/custom-zshrc \

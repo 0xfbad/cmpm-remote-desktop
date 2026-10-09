@@ -88,6 +88,17 @@ alias open="xdg-open 2>/dev/null"
 alias wget="wget --content-disposition"
 alias wget-insecure="wget --no-check-certificate --content-disposition"
 
+function ssh {
+  emulate -L zsh
+  if [[ ! -t 0 && ! -t 2 ]]; then
+    command ssh "$@"
+    return
+  fi
+
+  SSH_ASKPASS=/usr/local/bin/ssh-askpass-terminal \
+    SSH_ASKPASS_REQUIRE=force command ssh "$@"
+}
+
 zstyle ':completion:*' use-cache on
 zstyle ':completion:*' cache-path ~/.cache/zsh-completions
 
