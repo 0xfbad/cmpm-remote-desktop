@@ -293,6 +293,7 @@ install -d -m 1777 /tmp/.X11-unix
 Xvnc "$DISPLAY" \
   -localhost 0 \
   -SecurityTypes VncAuth \
+  -SendPrimary=0 \
   -PasswordFile "/home/$USERNAME/.vnc/passwd" \
   -geometry "$RESOLUTION" \
   -depth 24 9>&- &
