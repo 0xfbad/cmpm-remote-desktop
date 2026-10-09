@@ -95,4 +95,13 @@ eval "$(zoxide init zsh --cmd cd)"
 
 source <(fzf --zsh 2>/dev/null || true)
 
+setopt SHARE_HISTORY
+if (( ${+functions[fzf-history-widget]} )); then
+  fzf-shared-history-widget() {
+    fc -RI
+    fzf-history-widget
+  }
+  zle -N fzf-history-widget fzf-shared-history-widget
+fi
+
 PROMPT=$'%F{green}%n@%m%f %F{blue}%(4~|%-1~/.../%2~|%3~)%f\n%F{red}$%f '
