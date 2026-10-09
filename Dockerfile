@@ -130,6 +130,18 @@ RUN apt-get update && apt-get install -y \
         magic-wormhole \
         file \
         man-db \
+        manpages \
+        manpages-dev \
+        groff \
+        info \
+        bash-doc \
+        zsh-doc \
+        gcc-doc \
+        gdb-doc \
+        binutils-doc \
+        make-doc \
+        tar-doc \
+        wireshark-doc \
         firefox-esr \
         chromium \
         xdg-utils \
@@ -293,7 +305,7 @@ RUN dumpcap_path="$(command -v dumpcap)" \
 
 COPY configs/tealdeer/config.toml /etc/skel/.config/tealdeer/config.toml
 COPY install/prepare-caches.sh /tmp/prepare-caches.sh
-# installers remove apt lists, prepare runtime caches after all installers
+# installers remove apt lists
 RUN bash /tmp/prepare-caches.sh && rm /tmp/prepare-caches.sh
 
 ARG OCI_REVISION=""

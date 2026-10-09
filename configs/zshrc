@@ -59,6 +59,9 @@ function ls {
   command eza "${eza_args[@]}" -- "${operands[@]}"
 }
 
+unalias run-help 2>/dev/null
+autoload -Uz run-help
+
 alias l="ls"
 alias ll="ls -l"
 alias la="ls -la"

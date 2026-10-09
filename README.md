@@ -8,7 +8,7 @@ One container per session: Xvnc + noVNC (6080), ttyd (7682), optional SSH
 
 ```sh
 docker build --platform linux/amd64 -t ctfd-remote-desktop .
-# optional course CA: --secret id=ucsc_ca,src=ca.pem --build-arg UCSC_CA_CERT_SHA256=<der-sha256>
+# if adding a course ca, set --secret id=ucsc_ca,src=ca.pem and --build-arg UCSC_CA_CERT_SHA256=<der-sha256>
 ```
 
 ## Contract
@@ -34,6 +34,13 @@ mismatches.
 `ENABLE_WORKSPACE_CONTEXT=1` optionally captures recent shell commands to
 `/var/lib/rd-workspace/commands.log` for the AI tutor; it is off by default
 and not part of the contract.
+
+Manual pages, GNU Info references, shell builtin help, the Wireshark user
+guide, and cached `tldr` examples are available offline. Kali documentation
+packages can differ from the installed tool version; use the tool's
+built-in help for its current options. Zsh `run-help cd` opens its builtin
+reference.
+Some GUI documentation links, including Cutter and ImHex, still open online sites.
 
 ## Tests
 
