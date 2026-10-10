@@ -99,7 +99,7 @@
 +        if (this.disposed) return;
 +        await document.fonts
 +            .load(`${this.options.termOptions.fontSize}px ${this.options.termOptions.fontFamily}`)
-+            .catch(() => undefined); // a failed font download still permits the system fallback
++            .catch(() => undefined);
 +        if (this.disposed) return;
 +
 +        if (!parent.clientWidth || !parent.clientHeight) {
@@ -235,15 +235,26 @@
 
          const { textEncoder, terminal, overlayAddon } = this;
          const msg = JSON.stringify({ AuthToken: this.token, columns: terminal.cols, rows: terminal.rows });
-@@ -266,7 +353,6 @@
+@@ -266,35 +353,62 @@
              this.opened = true;
          }
 
 -        this.doReconnect = this.reconnect;
          this.initListeners();
-         terminal.focus();
+-        terminal.focus();
++        const frame = window.frameElement;
++        if (
++            frame?.id !== 'terminal-frame' ||
++            (frame.getClientRects().length > 0 &&
++                parent.document.hasFocus() &&
++                (parent.document.activeElement === frame || parent.document.activeElement === parent.document.body) &&
++                (document.activeElement === document.body || document.activeElement === terminal.textarea))
++        ) {
++            terminal.focus();
++        }
      }
-@@ -275,26 +361,45 @@
+
+     @bind
      private onSocketClose(event: CloseEvent) {
          console.log(`[ttyd] websocket connection closed with code: ${event.code}`);
 
@@ -309,7 +320,7 @@
      }
 
      @bind
-@@ -306,7 +411,7 @@
+@@ -306,7 +420,7 @@
 
          for (const [k, queryVal] of queryObj) {
              let v = clientOptions[k];
@@ -318,7 +329,7 @@
              switch (typeof v) {
                  case 'boolean':
                      prefs[k] = queryVal === 'true' || queryVal === '1';
-@@ -340,6 +445,7 @@
+@@ -340,6 +454,7 @@
 
          switch (cmd) {
              case Command.OUTPUT:
@@ -326,7 +337,7 @@
                  this.writeFunc(data);
                  break;
              case Command.SET_WINDOW_TITLE:
-@@ -352,6 +458,7 @@
+@@ -352,6 +467,7 @@
                      ...JSON.parse(textDecoder.decode(data)),
                      ...this.parseOptsFromUrlQuery(window.location.search),
                  } as Preferences);
@@ -334,7 +345,7 @@
                  break;
              default:
                  console.warn(`[ttyd] unknown command: ${cmd}`);
-@@ -361,7 +468,7 @@
+@@ -361,7 +477,7 @@
 
      @bind
      private applyPreferences(prefs: Preferences) {
@@ -343,7 +354,7 @@
          if (prefs.enableZmodem || prefs.enableTrzsz) {
              this.zmodemAddon = new ZmodemAddon({
                  zmodem: prefs.enableZmodem,
-@@ -397,7 +504,6 @@
+@@ -397,7 +513,6 @@
                      if (value) {
                          console.log('[ttyd] Reconnect disabled');
                          this.reconnect = false;
@@ -351,7 +362,7 @@
                      }
                      break;
                  case 'enableZmodem':
-@@ -446,7 +552,7 @@
+@@ -446,7 +561,7 @@
                      } else {
                          terminal.options[key] = value;
                      }
@@ -360,7 +371,7 @@
                      break;
              }
          }
-@@ -459,17 +565,19 @@
+@@ -459,17 +574,19 @@
              try {
                  this.canvasAddon?.dispose();
              } catch {

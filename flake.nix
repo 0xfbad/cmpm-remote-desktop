@@ -118,6 +118,7 @@
                 nativeBuildInputs = [
                   pkgs.gnutar
                   pkgs.gzip
+                  pkgs.nodejs
                   pkgs.patch
                 ];
               }
@@ -132,6 +133,8 @@
                   < ${self}/install/ttyd-reconnect.patch
                 patch --batch --forward --fuzz=0 -d source -p1 \
                   < ${self}/install/ttyd-reconnect.patch
+                TTYD_XTERM_SOURCE="$PWD/source/html/src/components/terminal/xterm/index.ts" \
+                  node --test ${self}/tests/ttyd-focus.test.mjs
                 touch $out
               '';
           systemd-unit-contracts =
