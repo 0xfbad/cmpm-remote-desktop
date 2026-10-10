@@ -238,6 +238,9 @@ RUN --mount=type=secret,id=ucsc_ca,required=false \
     fi
 
 COPY configs/xfce4/ /etc/xdg/xfce4/
+COPY configs/90-remote-desktop-mousepad.gschema.override /usr/share/glib-2.0/schemas/
+RUN glib-compile-schemas /usr/share/glib-2.0/schemas \
+    && test "$(GSETTINGS_BACKEND=memory gsettings get org.xfce.mousepad.preferences.file make-backup)" = true
 
 COPY assets/banner.jpg /usr/share/backgrounds/slugsec-banner.jpg
 
