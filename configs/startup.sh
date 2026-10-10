@@ -364,6 +364,7 @@ su -l -s /bin/bash "$USERNAME" -c "
   export SHELL=$USER_SHELL # the bootstrap shell override must not reach gui terminals
   export DISPLAY=$DISPLAY
   export XDG_RUNTIME_DIR=/run/user/$user_id
+  export TMPDIR=/run/user/$user_id
   exec dbus-launch --exit-with-session xfce4-session
 " 9>&- &
 xfce_supervisor_pid=$!
