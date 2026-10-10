@@ -4,9 +4,6 @@ set -euo pipefail
 runtime_dir=/run/remote-desktop
 state_dir=/var/lib/remote-desktop
 
-# OpenSSH invokes SSH_ASKPASS as a separate process. Reusing this executable
-# avoids staging the session password in another script; the root-only
-# credentials file remains the sole source of truth.
 if [[ ${REMOTE_DESKTOP_HEALTH_ASKPASS:-0} == 1 ]]; then
   credentials=$(<"$runtime_dir/ttyd-credentials")
   printf '%s\n' "${credentials#*:}"
@@ -40,9 +37,6 @@ deep_ssh_auth_probe() {
   return "$status"
 }
 
-# Startup calls this mode exactly once before publishing noVNC. Periodic
-# health uses a lightweight banner probe below to avoid repeated key exchange
-# and authentication load across hundreds of sessions.
 if [[ ${REMOTE_DESKTOP_DEEP_SSH_CHECK:-0} == 1 ]]; then
   deep_ssh_auth_probe
   exit 0
@@ -51,10 +45,6 @@ fi
 check_live_pid() {
   local pid=$1 state
   [[ $pid =~ ^[1-9][0-9]*$ ]]
-  # The plugin intentionally drops CAP_KILL. Container root therefore gets
-  # EPERM from kill(2) when probing the unprivileged XFCE processes even though
-  # they are alive. procfs existence/state is the capability-independent
-  # liveness source and also lets us reject stopped or uninterruptible tasks.
   [[ -r /proc/$pid/status ]]
   state=$(awk '$1 == "State:" {print $2}' "/proc/$pid/status") || return 1
   [[ -n $state ]] || return 1
@@ -98,12 +88,14 @@ if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
     http://127.0.0.1:7682/ >/dev/null
 fi
 
-username=$(<"$state_dir/resolved-username")
-[[ $username =~ ^[a-z_][a-z0-9_]{0,31}$ ]]
-user_id=$(id -u -- "$username")
+IFS= read -r xfce_supervisor_pid <"$runtime_dir/xfce.pid"
+xfce_session_pid=$(pgrep -P "$xfce_supervisor_pid" -x xfce4-session)
+check_live_pid "$xfce_session_pid"
+user_id=$(awk '$1 == "Uid:" {print $3}' "/proc/$xfce_session_pid/status") # account edits do not change running process credentials
+[[ $user_id =~ ^[0-9]+$ ]]
 
 if [[ ${ENABLE_SSH:-1} != 0 ]]; then
-  # shellcheck disable=SC2016 # the child Bash deliberately expands its own banner variable
+  # shellcheck disable=SC2016
   timeout 3 /bin/bash -c '
     exec 3<>/dev/tcp/127.0.0.1/22
     IFS= read -r -t 2 banner <&3
@@ -121,6 +113,5 @@ check_user_process() {
   return 1
 }
 
-check_user_process xfce4-session
 check_user_process xfwm4
 check_user_process xfce4-panel
