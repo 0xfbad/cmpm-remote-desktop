@@ -4,7 +4,7 @@
     <property name="screen0" type="empty">
       <property name="monitorVNC-0" type="empty">
         <property name="workspace0" type="empty">
-          <property name="last-image" type="string" value="/usr/share/backgrounds/SlugSec-Community-Banner.png"/>
+          <property name="last-image" type="string" value="/usr/share/backgrounds/slugsec-banner.jpg"/>
         </property>
       </property>
     </property>

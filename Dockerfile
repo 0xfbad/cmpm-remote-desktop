@@ -239,7 +239,7 @@ RUN --mount=type=secret,id=ucsc_ca,required=false \
 
 COPY configs/xfce4/ /etc/xdg/xfce4/
 
-COPY assets/SlugSec-Community-Banner.png /usr/share/backgrounds/SlugSec-Community-Banner.png
+COPY assets/banner.jpg /usr/share/backgrounds/slugsec-banner.jpg
 
 RUN set -Eeuo pipefail; \
     mkdir -p /etc/skel/.config/alacritty /etc/skel/.config/autostart /etc/skel/.cache \
