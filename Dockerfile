@@ -243,7 +243,6 @@ RUN glib-compile-schemas /usr/share/glib-2.0/schemas \
     && test "$(GSETTINGS_BACKEND=memory gsettings get org.xfce.mousepad.preferences.file make-backup)" = true
 
 COPY assets/banner.jpg /usr/share/backgrounds/slugsec-banner.jpg
-COPY assets/wallpapers/ /usr/share/backgrounds/remote-desktop/
 
 RUN set -Eeuo pipefail; \
     mkdir -p /etc/skel/.config/alacritty /etc/skel/.config/autostart /etc/skel/.cache \
@@ -293,7 +292,6 @@ COPY configs/tlog/tlog-rec-session.conf /etc/tlog/tlog-rec-session.conf
 COPY --chmod=755 configs/setup-recording.sh /usr/local/lib/setup-recording.sh
 
 COPY --chmod=755 configs/startup.sh /startup.sh
-COPY --chmod=755 configs/start-desktop.sh /usr/local/bin/remote-desktop-session
 COPY --chmod=755 configs/browser-terminal.sh /usr/local/bin/browser-terminal
 COPY configs/browser-terminal.conf /usr/local/lib/browser-terminal.conf
 COPY --chmod=755 configs/healthcheck.sh /usr/local/bin/remote-desktop-healthcheck

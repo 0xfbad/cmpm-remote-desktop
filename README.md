@@ -42,17 +42,6 @@ built-in help for its current options. Zsh `run-help cd` opens its builtin
 reference.
 Some GUI documentation links, including Cutter and ImHex, still open online sites.
 
-## Wallpapers
-
-Each container start randomly selects one image from `assets/wallpapers/`
-before XFCE starts. The choice stays the same across workspaces and browser
-reconnections; a restart draws again and can repeat the previous image.
-The initial pool contains ten black images numbered 1–10 for verification.
-Replace those files with your own PNG, JPEG, or SVG images and rebuild the
-image. See [the wallpaper pool](assets/wallpapers/README.md) for details.
-If the pool is empty or setup fails, the desktop still starts with its
-existing XFCE background settings.
-
 ## Tests
 
 `nix flake check` runs formatting, lint, configuration, script, patch, and
