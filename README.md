@@ -55,5 +55,5 @@ existing XFCE background settings.
 
 ## Tests
 
-`nix flake check` runs lint, static safety, and unit tests; the image and
-host E2E suites live in `tests/` and run from `.gitlab-ci.yml`.
+`nix flake check` runs formatting, lint, configuration, script, patch, and
+runtime contract checks. Test suites stay local and are not tracked.

@@ -95,30 +95,12 @@
                   configs/session-init/collector
                 touch $out
               '';
-          provisioning-safety =
-            pkgs.runCommand "provisioning-safety"
-              {
-                nativeBuildInputs = [
-                  pkgs.bash
-                  pkgs.coreutils
-                  pkgs.gnugrep
-                  pkgs.jq
-                ];
-              }
-              ''
-                cd ${self}
-                bash provisioning/storage/tests/storage-safety-static.sh
-                bash provisioning/storage/tests/storage-install-regression.sh
-                bash provisioning/tlog/tests/tlog-store-safety-static.sh
-                touch $out
-              '';
           ttyd-patch =
             pkgs.runCommand "ttyd-patch"
               {
                 nativeBuildInputs = [
                   pkgs.gnutar
                   pkgs.gzip
-                  pkgs.nodejs
                   pkgs.patch
                 ];
               }
@@ -133,8 +115,6 @@
                   < ${self}/install/ttyd-reconnect.patch
                 patch --batch --forward --fuzz=0 -d source -p1 \
                   < ${self}/install/ttyd-reconnect.patch
-                TTYD_XTERM_SOURCE="$PWD/source/html/src/components/terminal/xterm/index.ts" \
-                  node --test ${self}/tests/ttyd-focus.test.mjs
                 touch $out
               '';
           systemd-unit-contracts =
