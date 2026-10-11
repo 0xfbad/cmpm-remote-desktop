@@ -365,7 +365,7 @@ su -l -s /bin/bash "$USERNAME" -c "
   export DISPLAY=$DISPLAY
   export XDG_RUNTIME_DIR=/run/user/$user_id
   export TMPDIR=/run/user/$user_id
-  exec dbus-launch --exit-with-session xfce4-session
+  exec dbus-launch --exit-with-session /usr/local/bin/remote-desktop-session
 " 9>&- &
 xfce_supervisor_pid=$!
 record_pid xfce "$xfce_supervisor_pid"
