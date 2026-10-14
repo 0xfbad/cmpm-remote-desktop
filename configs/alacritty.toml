@@ -1,3 +1,9 @@
+[general]
+live_config_reload = false
+
+[env]
+LP_NUM_THREADS = "2"
+
 [font]
 normal = { family = "JetBrainsMono Nerd Font Mono", style = "Regular" }
 size = 12.0
