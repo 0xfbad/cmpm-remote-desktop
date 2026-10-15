@@ -211,7 +211,7 @@ void enter_disk_root(void) {
     device_link("stdout", "/proc/self/fd/1");
     device_link("stderr", "/proc/self/fd/2");
     disk_mount("devpts", "/quota-runtime/root/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
-        "newinstance,ptmxmode=0666,mode=0620");
+        "newinstance,ptmxmode=0666,mode=0620,max=128");
     if (chdir("/quota-runtime/root") || syscall(SYS_pivot_root, ".", ".oldroot") || chdir("/"))
         disk_fail("pivot disk root");
     if (umount2("/.oldroot", MNT_DETACH) || rmdir("/.oldroot")) disk_fail("detach old root");
