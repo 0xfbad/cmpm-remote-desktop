@@ -13,7 +13,7 @@ docker build --platform linux/amd64 -t ctfd-remote-desktop .
 
 ## Contract
 
-The image carries `edu.ucsc.ctfd-remote-desktop.contract=3`, naming the
+The image carries `edu.ucsc.ctfd-remote-desktop.contract=4`, naming the
 plugin-facing interface: ports 22/5900/6080/7682, the resolved-username
 handoff, startup readiness/health behavior, and these env vars:
 

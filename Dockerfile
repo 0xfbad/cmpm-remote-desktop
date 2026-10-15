@@ -215,7 +215,7 @@ COPY configs/firefox/firefox.cfg /usr/lib/firefox-esr/firefox.cfg
 COPY configs/firefox/distribution.ini /usr/share/firefox-esr/distribution/distribution.ini
 COPY configs/ssh_config.d/90-remote-desktop.conf /etc/ssh/ssh_config.d/90-remote-desktop.conf
 
-# if adding a course ca, get it from an independent source
+# if you add a course ca, use an independent source
 ARG UCSC_CA_CERT_SHA256=""
 RUN --mount=type=secret,id=ucsc_ca,required=false \
     set -Eeuo pipefail; \
@@ -274,7 +274,6 @@ RUN python3 -c 'from pathlib import Path; compile(Path("/usr/local/bin/ssh-askpa
     && rm /tmp/custom-zshrc \
     && zsh -c 'autoload -Uz compinit && compinit -d /etc/skel/.cache/zcompdump'
 
-# retain the reconnect behavior from before upstream change 1672
 RUN target=/usr/share/novnc/app/ui.js \
     && old="if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {" \
     && new="else if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {" \
@@ -296,7 +295,7 @@ COPY --chmod=755 configs/browser-terminal.sh /usr/local/bin/browser-terminal
 COPY configs/browser-terminal.conf /usr/local/lib/browser-terminal.conf
 COPY --chmod=755 configs/healthcheck.sh /usr/local/bin/remote-desktop-healthcheck
 
-# cap_net_admin is unavailable at runtime, nmap still needs cap_net_raw for --privileged
+# runtime excludes cap_net_admin, nmap needs cap_net_raw for --privileged
 RUN dumpcap_path="$(command -v dumpcap)" \
     && setcap cap_net_raw=ep "$dumpcap_path" \
     && getcap "$dumpcap_path" | grep -Fqx "$dumpcap_path cap_net_raw=ep" \
@@ -308,20 +307,31 @@ RUN dumpcap_path="$(command -v dumpcap)" \
 
 COPY configs/tealdeer/config.toml /etc/skel/.config/tealdeer/config.toml
 COPY install/prepare-caches.sh /tmp/prepare-caches.sh
-# installers remove apt lists
 RUN bash /tmp/prepare-caches.sh && rm /tmp/prepare-caches.sh
+
+COPY install/workspace/ /tmp/workspace-runtime/
+RUN python3 /tmp/workspace-runtime/build-guest-policy.py \
+        /tmp/workspace-runtime/guest-seccomp.json /tmp/workspace-runtime/guest-filter.h \
+    && install -d -m 0755 /usr/local/libexec \
+    && gcc -std=c17 -O2 -Wall -Wextra -Werror -static \
+        /tmp/workspace-runtime/workspace-runtime.c /tmp/workspace-runtime/disk-setup.c \
+        /tmp/workspace-runtime/inotify-broker.c -o /usr/local/libexec/workspace-runtime \
+    && chmod 0755 /usr/local/libexec/workspace-runtime \
+    && install -D -m 0644 /tmp/workspace-runtime/LICENSE /usr/local/share/licenses/workspace-runtime/LICENSE \
+    && install -m 0644 /tmp/workspace-runtime/seccomp-source.json /usr/local/share/licenses/workspace-runtime/seccomp-source.json \
+    && rm -rf /tmp/workspace-runtime
 
 ARG OCI_REVISION=""
 # weekly rebuilds can change packages without changing the source revision
 ARG OCI_CREATED=""
 LABEL org.opencontainers.image.revision="$OCI_REVISION" \
       org.opencontainers.image.created="$OCI_CREATED" \
-      edu.ucsc.ctfd-remote-desktop.contract="3"
+      edu.ucsc.ctfd-remote-desktop.contract="4" \
+      edu.ucsc.ctfd-remote-desktop.guest-policy-sha256="63405c81b33f692155cd10d177e48239d891ed2ffb4f9f065f984dde768e3616"
 
 EXPOSE 22 5900 6080 7682
 
-HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --start-interval=5s --retries=3 \
-    CMD ["/usr/local/bin/remote-desktop-healthcheck"]
+HEALTHCHECK NONE
 
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/startup.sh"]
+ENTRYPOINT ["/usr/local/libexec/workspace-runtime", "init"]
