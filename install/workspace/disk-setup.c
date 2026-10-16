@@ -64,7 +64,7 @@ static void format_image(void) {
     if (!child) {
         if (syscall(SYS_close_range, 3U, ~0U, 0) && errno != ENOSYS) _exit(81);
         char *const arguments[] = {"/usr/sbin/mke2fs", "-q", "-t", "ext4", "-m", "0",
-            "-E", "lazy_itable_init=0,lazy_journal_init=0", "/quota-store/root.img", NULL};
+            "-E", "lazy_itable_init=0,lazy_journal_init=0,nodiscard", "/quota-store/root.img", NULL};
         char *const environment[] = {"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C", NULL};
         execve(arguments[0], arguments, environment);
         _exit(82);
@@ -156,20 +156,19 @@ int prepare_disk(const char *generation, unsigned long long bytes) {
     struct stat info;
     if (fstat(backing, &info) || !S_ISREG(info.st_mode) || info.st_nlink != 1 || info.st_uid != 0)
         disk_fail("disk backing identity");
-    if (created) {
-        if (ftruncate(backing, (off_t)bytes)) disk_fail("disk size");
-        format_image();
-    } else if ((unsigned long long)info.st_size != bytes) {
+    if (!created && (unsigned long long)info.st_size != bytes) {
         errno = EINVAL;
         disk_fail("existing disk size");
     }
+    if (fallocate(backing, 0, 0, (off_t)bytes)) disk_fail("disk allocation");
+    if (created) format_image();
     int loop = configure_loop(backing);
     close(backing);
     struct loop_info64 loop_info;
     if (ioctl(loop, LOOP_GET_STATUS64, &loop_info)) disk_fail("loop status");
     char device[64];
     snprintf(device, sizeof(device), "/dev/loop%u", loop_info.lo_number);
-    disk_mount(device, "/quota-runtime/fs", "ext4", 0, "discard");
+    disk_mount(device, "/quota-runtime/fs", "ext4", 0, "nodiscard");
     directory("/quota-runtime/fs/upper", 0755);
     directory("/quota-runtime/fs/work", 0700);
     disk_mount("/", "/quota-runtime/base", NULL, MS_BIND, NULL);
