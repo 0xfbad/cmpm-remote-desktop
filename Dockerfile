@@ -215,7 +215,6 @@ COPY configs/firefox/firefox.cfg /usr/lib/firefox-esr/firefox.cfg
 COPY configs/firefox/distribution.ini /usr/share/firefox-esr/distribution/distribution.ini
 COPY configs/ssh_config.d/90-remote-desktop.conf /etc/ssh/ssh_config.d/90-remote-desktop.conf
 
-# if you add a course ca, use an independent source
 ARG UCSC_CA_CERT_SHA256=""
 RUN --mount=type=secret,id=ucsc_ca,required=false \
     set -Eeuo pipefail; \
@@ -295,7 +294,6 @@ COPY --chmod=755 configs/browser-terminal.sh /usr/local/bin/browser-terminal
 COPY configs/browser-terminal.conf /usr/local/lib/browser-terminal.conf
 COPY --chmod=755 configs/healthcheck.sh /usr/local/bin/remote-desktop-healthcheck
 
-# runtime excludes cap_net_admin, nmap needs cap_net_raw for --privileged
 RUN dumpcap_path="$(command -v dumpcap)" \
     && setcap cap_net_raw=ep "$dumpcap_path" \
     && getcap "$dumpcap_path" | grep -Fqx "$dumpcap_path cap_net_raw=ep" \
@@ -317,12 +315,11 @@ RUN python3 /tmp/workspace-runtime/build-guest-policy.py \
         /tmp/workspace-runtime/workspace-runtime.c /tmp/workspace-runtime/disk-setup.c \
         /tmp/workspace-runtime/inotify-broker.c -o /usr/local/libexec/workspace-runtime \
     && chmod 0755 /usr/local/libexec/workspace-runtime \
-    && install -D -m 0644 /tmp/workspace-runtime/LICENSE /usr/local/share/licenses/workspace-runtime/LICENSE \
-    && install -m 0644 /tmp/workspace-runtime/seccomp-source.json /usr/local/share/licenses/workspace-runtime/seccomp-source.json \
+    && install -D -m 0644 /tmp/workspace-runtime/guest-seccomp.LICENSE /usr/local/share/licenses/moby-seccomp/LICENSE \
+    && install -m 0644 /tmp/workspace-runtime/seccomp-source.json /usr/local/share/licenses/moby-seccomp/source.json \
     && rm -rf /tmp/workspace-runtime
 
 ARG OCI_REVISION=""
-# weekly rebuilds can change packages without changing the source revision
 ARG OCI_CREATED=""
 LABEL org.opencontainers.image.revision="$OCI_REVISION" \
       org.opencontainers.image.created="$OCI_CREATED" \
