@@ -127,7 +127,7 @@ static void device_link(const char *name, const char *target) {
     if (symlink(target, path)) disk_fail(path);
 }
 
-int prepare_disk(const char *generation, unsigned long long bytes) {
+int prepare_disk_backing(const char *generation, unsigned long long bytes) {
     if (!generation || !*generation || strlen(generation) > 127) {
         errno = EINVAL;
         disk_fail("generation");
@@ -173,6 +173,11 @@ int prepare_disk(const char *generation, unsigned long long bytes) {
     directory("/quota-runtime/fs/work", 0700);
     disk_mount("/", "/quota-runtime/base", NULL, MS_BIND, NULL);
     disk_mount(NULL, "/quota-runtime/base", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL);
+    return loop;
+}
+
+int prepare_disk(const char *generation, unsigned long long bytes) {
+    int loop = prepare_disk_backing(generation, bytes);
     disk_mount("overlay", "/quota-runtime/root", "overlay", 0,
         "lowerdir=/quota-runtime/base,upperdir=/quota-runtime/fs/upper,workdir=/quota-runtime/fs/work,index=off");
     directory("/quota-runtime/root/.oldroot", 0700);

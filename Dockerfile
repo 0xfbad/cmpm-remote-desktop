@@ -18,6 +18,18 @@ RUN patch --batch --forward --fuzz=0 -d .. -p1 </tmp/ttyd-reconnect.patch \
         src/components/terminal/xterm/index.ts src/components/terminal/index.tsx \
     && node /tmp/yarn/package/bin/yarn.js build
 
+FROM kalilinux/kali-rolling@sha256:ed99295a386abde2fb31e01a441b7c2800d9bcf19a20028b77d642c3ef068363 AS fuse-overlayfs
+ARG DEBIAN_FRONTEND=noninteractive
+ADD --checksum=sha256:fdd1896c8de35a15eb14444d7880be81d635fcbbc4ad162d8bc3ccf5627aa8c7 \
+    https://github.com/containers/fuse-overlayfs/archive/refs/tags/v1.18.tar.gz /tmp/fuse-overlayfs.tar.gz
+RUN apt-get update --error-on=any \
+    && apt-get install -y --no-install-recommends \
+        autoconf automake gcc libc6-dev libfuse3-dev make pkgconf \
+    && rm -rf /var/lib/apt/lists/* \
+    && tar -xzf /tmp/fuse-overlayfs.tar.gz -C /tmp
+WORKDIR /tmp/fuse-overlayfs-1.18
+RUN ./autogen.sh && ./configure && make -j2 && ./fuse-overlayfs --version
+
 FROM kalilinux/kali-rolling@sha256:ed99295a386abde2fb31e01a441b7c2800d9bcf19a20028b77d642c3ef068363
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -307,13 +319,21 @@ COPY configs/tealdeer/config.toml /etc/skel/.config/tealdeer/config.toml
 COPY install/prepare-caches.sh /tmp/prepare-caches.sh
 RUN bash /tmp/prepare-caches.sh && rm /tmp/prepare-caches.sh
 
+RUN apt-get update --error-on=any \
+    && apt-get install -y --no-install-recommends dnsmasq-base iproute2 libfuse3-4 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
+COPY --from=fuse-overlayfs /tmp/fuse-overlayfs-1.18/fuse-overlayfs /usr/local/libexec/fuse-overlayfs
+COPY --from=fuse-overlayfs /tmp/fuse-overlayfs-1.18/COPYING /usr/local/share/licenses/fuse-overlayfs/COPYING
+
 COPY install/workspace/ /tmp/workspace-runtime/
 RUN python3 /tmp/workspace-runtime/build-guest-policy.py \
         /tmp/workspace-runtime/guest-seccomp.json /tmp/workspace-runtime/guest-filter.h \
     && install -d -m 0755 /usr/local/libexec \
-    && gcc -std=c17 -O2 -Wall -Wextra -Werror -static \
+    && gcc -std=c17 -O2 -Wall -Wextra -Werror -static -DWORKSPACE_MAPPED_IDS=1 \
         /tmp/workspace-runtime/workspace-runtime.c /tmp/workspace-runtime/disk-setup.c \
-        /tmp/workspace-runtime/inotify-broker.c -o /usr/local/libexec/workspace-runtime \
+        /tmp/workspace-runtime/inotify-broker.c /tmp/workspace-runtime/mapped-runtime.c \
+        /tmp/workspace-runtime/mapped-network.c -o /usr/local/libexec/workspace-runtime \
     && chmod 0755 /usr/local/libexec/workspace-runtime \
     && install -D -m 0644 /tmp/workspace-runtime/guest-seccomp.LICENSE /usr/local/share/licenses/moby-seccomp/LICENSE \
     && install -m 0644 /tmp/workspace-runtime/seccomp-source.json /usr/local/share/licenses/moby-seccomp/source.json \
@@ -324,6 +344,7 @@ ARG OCI_CREATED=""
 LABEL org.opencontainers.image.revision="$OCI_REVISION" \
       org.opencontainers.image.created="$OCI_CREATED" \
       edu.ucsc.ctfd-remote-desktop.contract="4" \
+      edu.ucsc.ctfd-remote-desktop.mapped-ids="1" \
       edu.ucsc.ctfd-remote-desktop.guest-policy-sha256="63405c81b33f692155cd10d177e48239d891ed2ffb4f9f065f984dde768e3616"
 
 EXPOSE 22 5900 6080 7682

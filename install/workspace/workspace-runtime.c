@@ -10,6 +10,9 @@
 #include <poll.h>
 #include <sys/syscall.h>
 #include "disk-setup.h"
+#ifdef WORKSPACE_MAPPED_IDS
+#include "mapped-runtime.h"
+#endif
 #include "inotify-broker.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -270,6 +273,10 @@ int main(int argc, char **argv) {
     sigaction(SIGTERM, &action, NULL);
     sigaction(SIGINT, &action, NULL);
     sigaction(SIGHUP, &action, NULL);
+#ifdef WORKSPACE_MAPPED_IDS
+    if (argc > 1 && !strcmp(argv[1], "init")) return mapped_initialize(argc, argv, protect_proc, guest_apparmor, guest_policy);
+    if (argc > 1 && !strcmp(argv[1], "enter")) return mapped_enter(argc, argv, guest_apparmor, guest_policy);
+#endif
     if (argc > 1 && !strcmp(argv[1], "init")) return initialize(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "enter")) return enter(argc, argv);
     return 64;
