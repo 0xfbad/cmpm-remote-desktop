@@ -95,6 +95,7 @@ RUN apt-get update && apt-get install -y \
         neovim \
         emacs-nox \
         nano \
+        micro \
         gedit \
         ed \
         hexedit \
