@@ -320,12 +320,6 @@ RUN python3 /tmp/workspace-runtime/build-guest-policy.py \
     && install -m 0644 /tmp/workspace-runtime/seccomp-source.json /usr/local/share/licenses/moby-seccomp/source.json \
     && rm -rf /tmp/workspace-runtime
 
-ARG OCI_REVISION=""
-ARG OCI_CREATED=""
-LABEL org.opencontainers.image.revision="$OCI_REVISION" \
-      org.opencontainers.image.created="$OCI_CREATED" \
-      edu.ucsc.ctfd-remote-desktop.guest-policy-sha256="63405c81b33f692155cd10d177e48239d891ed2ffb4f9f065f984dde768e3616"
-
 EXPOSE 22 5900 6080 7682
 
 HEALTHCHECK NONE
