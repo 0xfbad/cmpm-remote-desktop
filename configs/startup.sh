@@ -80,23 +80,23 @@ install -d -o root -g root -m 0755 /var/lib/dbus
 ln -sfn /etc/machine-id /var/lib/dbus/machine-id
 
 if [[ -L $state_dir ]] || [[ -e $state_dir && ! -d $state_dir ]]; then
-  echo "invalid student account state directory" >&2
+  echo "invalid user account state directory" >&2
   exit 1
 fi
 install -d -o root -g root -m 0700 "$state_dir"
 
 if [[ -L $username_file ]] || [[ -e $username_file && ! -f $username_file ]]; then
-  echo "invalid persisted student account file" >&2
+  echo "invalid persisted user account file" >&2
   exit 1
 fi
 if [[ -f $username_file ]]; then
   if [[ $(stat -c '%u:%g:%a' -- "$username_file" 2>/dev/null) != 0:0:600 ]]; then
-    echo "persisted student account file has unsafe ownership or mode" >&2
+    echo "persisted user account file has unsafe ownership or mode" >&2
     exit 1
   fi
   USERNAME=$(<"$username_file")
   if [[ ! $USERNAME =~ ^[a-z_][a-z0-9_]{0,31}$ ]]; then
-    echo "invalid persisted student account: $USERNAME" >&2
+    echo "invalid persisted user account: $USERNAME" >&2
     exit 1
   fi
 else
@@ -110,12 +110,12 @@ else
   *) USERNAME=user ;;
   esac
   case "$USERNAME" in
-  [0-9]*) USERNAME="student_$USERNAME" ;; # useradd requires a nonnumeric leading character
+  [0-9]*) USERNAME="user_$USERNAME" ;; # useradd requires a nonnumeric leading character
   esac
   USERNAME=${USERNAME:0:32} # linux account names allow at most 32 characters
 
   if id -u -- "$USERNAME" >/dev/null 2>&1 || getent group -- "$USERNAME" >/dev/null 2>&1; then # base accounts may have a system uid or locked shell
-    username_stem="student_$USERNAME"
+    username_stem="user_$USERNAME"
     username_stem=${username_stem:0:32}
     USERNAME=$username_stem
     username_suffix=2
@@ -220,19 +220,12 @@ if [[ -n ${MAX_LIFETIME:-} ]]; then
   record_pid lifetime "$!"
 fi
 
-# shellcheck source=configs/setup-recording.sh
-. /usr/local/lib/setup-recording.sh
-
 if ! id -u -- "$USERNAME" >/dev/null 2>&1; then
-  useradd -m -s "$USER_SHELL" "$USERNAME"
+  useradd -m -s /bin/zsh "$USERNAME"
   install -d -o "$USERNAME" -g "$USERNAME" -m 0755 "/home/$USERNAME/Downloads"
   chmod 0755 "/home/$USERNAME"
 else
-  usermod -s "$USER_SHELL" "$USERNAME"
-fi
-
-if [[ ${ENABLE_WORKSPACE_CONTEXT:-0} == 1 ]]; then
-  install -d -o "$USERNAME" -g "$USERNAME" -m 0700 /var/lib/rd-workspace # student writable ai context must stay outside root only account state
+  usermod -s /bin/zsh "$USERNAME"
 fi
 
 /usr/local/bin/remote-desktop-command-collector 9>&- &
@@ -315,7 +308,7 @@ fi
 if [[ ${ENABLE_TTYD:-1} != 0 ]]; then
   ttyd -p 7682 -W -O -m 16 -c "$USERNAME:$PASS" \
     -t disableLeaveAlert=true \
-    su -l "$USERNAME" -s /usr/local/bin/browser-terminal -- "$USER_SHELL" 9>&- &
+    su -l "$USERNAME" -s /usr/local/bin/browser-terminal -- /bin/zsh 9>&- &
   record_pid ttyd "$!"
 fi
 
@@ -361,7 +354,7 @@ if [[ -n ${CTFD_COOKIE_VALUE:-} && -n ${CTFD_URL:-} ]]; then
 fi
 
 su -l -s /bin/bash "$USERNAME" -c "
-  export SHELL=$USER_SHELL # the bootstrap shell override must not reach gui terminals
+  export SHELL=/bin/zsh # the bootstrap shell override must not reach gui terminals
   export DISPLAY=$DISPLAY
   export XDG_RUNTIME_DIR=/run/user/$user_id
   export TMPDIR=/run/user/$user_id

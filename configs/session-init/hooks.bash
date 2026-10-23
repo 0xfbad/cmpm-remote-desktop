@@ -8,6 +8,7 @@ __si_tty=""
 
 __si_prompt() {
   local ec=$? entry id cmd
+  local LC_ALL=C
   entry=$(HISTTIMEFORMAT='' history 1 2>/dev/null)
   if [[ ! $entry =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
     return "$ec"
@@ -18,6 +19,7 @@ __si_prompt() {
     return "$ec"
   fi
   __si_history_id=$id
+  ((${#cmd} <= 60 * 1024)) || return "$ec"
   [[ -z $__si_tty ]] && __si_tty=$(tty 2>/dev/null || echo "?")
   (
     /usr/local/bin/remote-desktop-command-sender /run/.session-init.sock \

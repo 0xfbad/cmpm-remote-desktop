@@ -1,48 +1,96 @@
 #!/usr/bin/env python3
 import json
+import math
 import os
-import sys
 import signal
 import socket
+import time
 
 SOCK_PATH = "/run/.session-init.sock"
 LOG_DIR = "/var/log/.session-init"
 LOG_PATH = os.path.join(LOG_DIR, "data.jsonl")
+MAX_RECORD_BYTES = 64 * 1024
+MAX_EVENTS_PER_SECOND = 128
+MAX_BYTES_PER_SECOND = 256 * 1024
+MAX_RECORDS_PER_SECOND = 10
+MAX_WRITTEN_BYTES_PER_SECOND = 64 * 1024
+MAX_LOG_BYTES = 4 * 1024 * 1024
+
+
+def encode_record(data):
+    if not data.startswith(b"{"):
+        data = data.partition(b"rd-command: ")[2]
+    record = json.loads(data)
+    if not isinstance(record, dict) or set(record) != {"ts", "cmd", "exit", "duration_ms", "cwd", "tty"}:
+        return None
+    ts = record["ts"]
+    if type(ts) not in (int, float) or not math.isfinite(ts) or not 0 <= ts <= 10**12:
+        return None
+    if type(record["exit"]) is not int or not 0 <= record["exit"] <= 255:
+        return None
+    duration = record["duration_ms"]
+    if duration is not None and (type(duration) is not int or not 0 <= duration <= 10**12):
+        return None
+    for field, limit in (("cmd", MAX_RECORD_BYTES), ("cwd", 4096), ("tty", 512)):
+        if type(record[field]) is not str or len(record[field].encode("utf-8")) > limit:
+            return None
+    line = (json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    return line if len(line) <= MAX_RECORD_BYTES else None
 
 
 def main():
     os.makedirs(LOG_DIR, mode=0o700, exist_ok=True)
-
     if os.path.exists(SOCK_PATH):
         os.unlink(SOCK_PATH)
-
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     sock.bind(SOCK_PATH)
     os.chmod(SOCK_PATH, 0o622)
 
     def shutdown(signum, frame):
-        try:
-            os.unlink(SOCK_PATH)
-        except OSError:
-            pass
-        sys.exit(0)
+        raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
-
-    with open(LOG_PATH, "a", buffering=1) as f:
+    window_start = time.monotonic()
+    events = received_bytes = records = written_bytes = 0
+    journal = open(LOG_PATH, "ab", buffering=0)
+    try:
         while True:
-            try:
-                length = sock.recvmsg_into([bytearray(1)], 0, socket.MSG_PEEK | socket.MSG_TRUNC)[0]
-                data = sock.recv(max(length, 1))
-                if data:
-                    record = json.loads(data if data.startswith(b"{") else data.partition(b"rd-command: ")[2])
-                    if isinstance(record, dict):
-                        f.write(json.dumps(record, ensure_ascii=True) + "\n")
-            except (KeyboardInterrupt, SystemExit):
-                break
-            except Exception:
+            now = time.monotonic()
+            if events >= MAX_EVENTS_PER_SECOND or received_bytes >= MAX_BYTES_PER_SECOND:
+                time.sleep(max(0, window_start + 1 - now))
+            data, _, flags, _ = sock.recvmsg(MAX_RECORD_BYTES)
+            now = time.monotonic()
+            if now - window_start >= 1:
+                window_start = now
+                events = received_bytes = records = written_bytes = 0
+            events += 1
+            received_bytes += len(data)
+            if not data or flags & socket.MSG_TRUNC:
                 continue
+            try:
+                line = encode_record(data)
+            except (ValueError, RecursionError, UnicodeError, OverflowError):
+                continue
+            if line is None or records >= MAX_RECORDS_PER_SECOND or written_bytes + len(line) > MAX_WRITTEN_BYTES_PER_SECOND:
+                continue
+            if journal.tell() + len(line) > MAX_LOG_BYTES:
+                journal.close()
+                os.replace(LOG_PATH, LOG_PATH + ".1")
+                journal = open(LOG_PATH, "ab", buffering=0)
+            position = journal.tell()
+            if journal.write(line) != len(line):
+                journal.truncate(position)
+                raise OSError("incomplete command journal write")
+            records += 1
+            written_bytes += len(line)
+    finally:
+        journal.close()
+        sock.close()
+        try:
+            os.unlink(SOCK_PATH)
+        except FileNotFoundError:
+            pass
 
 
 if __name__ == "__main__":

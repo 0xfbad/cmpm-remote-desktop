@@ -141,17 +141,6 @@ if [ "$pool_base_protected" = true ] && [[ $RD_POOL_SIZE =~ ^[0-9]+$ ]] &&
   [ "$binding_ok" = true ] && network_private_binding=true
 fi
 
-tlog_socket_active=false
-if [ -S /run/rd-tlog/log.sock ] && systemctl is-active --quiet rd-tlog-collector.socket 2>/dev/null; then
-  tlog_socket_active=true
-fi
-tlog_store_mounted=false
-mountpoint -q /var/lib/rd-tlog 2>/dev/null && tlog_store_mounted=true
-tlog_store_block_backed=false
-if [ -x /usr/local/lib/rd-tlog/check-store.sh ] && /usr/local/lib/rd-tlog/check-store.sh >/dev/null 2>&1; then
-  tlog_store_block_backed=true
-fi
-
 storage_driver="$(docker info --format '{{.Driver}}' 2>/dev/null)" || storage_driver=""
 storage_backing="$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "Backing Filesystem"}}{{index . 1}}{{end}}{{end}}' 2>/dev/null)" || storage_backing=""
 docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || docker_root=""
@@ -250,14 +239,6 @@ for scope_dir in "$SLICE_CGROUP"/docker-*.scope; do
   esac
   mem_max="$(cat "$scope_dir/memory.max" 2>/dev/null)" || mem_max=""
 
-  tlog_processes=0
-  while read -r pid; do
-    comm="$(cat "/proc/$pid/comm" 2>/dev/null)" || comm=""
-    case "$comm" in
-    tlog-rec-session | tlog-rec-sessio) tlog_processes=$((tlog_processes + 1)) ;; # comm names are limited to 15 characters
-    esac
-  done <"$scope_dir/cgroup.procs"
-
   obj="{\"id\": \"$cid\""
   obj="$obj, \"cpu_pressure\": $cpu_p"
   obj="$obj, \"io_pressure\": $io_p"
@@ -267,7 +248,7 @@ for scope_dir in "$SLICE_CGROUP"/docker-*.scope; do
   obj="$obj, \"io_stat\": \"$io_stat\""
   obj="$obj, \"memory_current\": $mem_cur"
   obj="$obj, \"memory_max\": \"$mem_max\""
-  obj="$obj, \"tlog_processes\": $tlog_processes}"
+  obj="$obj}"
 
   containers="$containers$sep$obj"
   sep=", "
@@ -279,7 +260,7 @@ out="$TELEMETRY_DIR/current.json"
 ready=true
 for check in "$slice_configured" "$compute_limits_match" "$network_policy_loaded" \
   "$network_pool_ready" "$network_private_binding" "$network_proxy_acl" \
-  "$tlog_socket_active" "$tlog_store_mounted" "$tlog_store_block_backed" "$storage_ready"; do
+  "$storage_ready"; do
   [ "$check" = true ] || ready=false
 done
 
@@ -309,9 +290,6 @@ printf '%s\n' "{
     \"network_pool_ready\": $network_pool_ready,
     \"network_private_binding\": $network_private_binding,
     \"network_proxy_acl\": $network_proxy_acl,
-    \"tlog_socket_active\": $tlog_socket_active,
-    \"tlog_store_mounted\": $tlog_store_mounted,
-    \"tlog_store_block_backed\": $tlog_store_block_backed,
     \"storage_ready\": $storage_ready
   },
   \"configuration\": {
@@ -336,10 +314,6 @@ printf '%s\n' "{
       \"service_active\": $network_policy_service_active,
       \"docker_requires_policy\": $docker_requires_policy,
       \"docker_after_policy\": $docker_after_policy
-    },
-    \"tlog\": {
-      \"socket_path\": \"/run/rd-tlog/log.sock\",
-      \"store_mount\": \"/var/lib/rd-tlog\"
     },
     \"storage\": {
       \"driver\": \"$storage_driver\",

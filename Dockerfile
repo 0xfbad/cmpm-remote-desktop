@@ -201,7 +201,7 @@ RUN bash /tmp/install-ttyd.sh \
 COPY install/install-zsteg.sh /tmp/
 RUN bash /tmp/install-zsteg.sh && rm /tmp/install-zsteg.sh
 
-RUN apt-get update && apt-get install -y tlog python3-prompt-toolkit \
+RUN apt-get update && apt-get install -y python3-prompt-toolkit \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/ssh/ssh_host_*_key* /etc/machine-id /var/lib/dbus/machine-id
 
@@ -242,7 +242,7 @@ COPY configs/90-remote-desktop-mousepad.gschema.override /usr/share/glib-2.0/sch
 RUN glib-compile-schemas /usr/share/glib-2.0/schemas \
     && test "$(GSETTINGS_BACKEND=memory gsettings get org.xfce.mousepad.preferences.file make-backup)" = true
 
-COPY assets/banner.jpg /usr/share/backgrounds/slugsec-banner.jpg
+COPY assets/wallpapers/wallpaper.jpg /usr/share/backgrounds/wallpaper.jpg
 COPY assets/wallpapers/ /usr/share/backgrounds/remote-desktop/
 
 RUN set -Eeuo pipefail; \
@@ -305,9 +305,6 @@ RUN target=/usr/share/novnc/app/ui.js \
         echo "noVNC reconnect patch no longer matches $target" >&2; \
         exit 1; \
     fi
-
-COPY configs/tlog/tlog-rec-session.conf /etc/tlog/tlog-rec-session.conf
-COPY --chmod=755 configs/setup-recording.sh /usr/local/lib/setup-recording.sh
 
 COPY --chmod=755 configs/startup.sh /startup.sh
 COPY --chmod=755 configs/start-desktop.sh /usr/local/bin/remote-desktop-session

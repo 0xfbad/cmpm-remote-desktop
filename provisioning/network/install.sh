@@ -160,7 +160,7 @@ systemctl enable --now rd-net-sysctl.service
 if [ "$DEV_MODE" -eq 1 ]; then
   echo "==> DEV MODE: loading non-persistent bridge assertion only"
   nft -f "$policy_candidate"
-  echo "    Do not use --dev on a runner that hosts untrusted student sessions."
+  echo "    Do not use --dev on a runner that hosts untrusted user sessions."
 else
   echo "==> installing atomic reboot-persistent nftables policy"
   policy_target_candidate="$(mktemp /etc/.rd-network-policy.nft.XXXXXX)"

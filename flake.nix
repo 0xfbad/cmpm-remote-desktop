@@ -58,7 +58,6 @@
                 cd ${self}
                 find configs -name '*.xml' -exec xmllint --noout {} +
                 jq -e . configs/firefox/policies.json >/dev/null
-                jq -e . configs/tlog/tlog-rec-session.conf >/dev/null
                 touch $out
               '';
           script-validation =
@@ -92,10 +91,8 @@
               ''
                 cd ${self}
                 export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
-                python3 -m py_compile \
-                  provisioning/tlog/rd_tlog_collector.py \
-                  configs/session-init/collector
-                ruff check --no-cache --select F821 provisioning/tlog/rd_tlog_collector.py configs/session-init/collector
+                python3 -m py_compile configs/session-init/collector
+                ruff check --no-cache --select F821 configs/session-init/collector
                 touch $out
               '';
           ttyd-patch =
