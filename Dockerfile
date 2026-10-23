@@ -320,6 +320,8 @@ RUN python3 /tmp/workspace-runtime/build-guest-policy.py \
     && install -m 0644 /tmp/workspace-runtime/seccomp-source.json /usr/local/share/licenses/moby-seccomp/source.json \
     && rm -rf /tmp/workspace-runtime
 
+RUN sed -i 's|^Exec=/usr/share/kali-menu/helper-scripts/wireshark.sh %f$|Exec=wireshark %f|' /usr/share/applications/org.wireshark.Wireshark.desktop
+
 EXPOSE 22 5900 6080 7682
 
 HEALTHCHECK NONE
