@@ -34,9 +34,9 @@ def main():
         while True:
             try:
                 length = sock.recvmsg_into([bytearray(1)], 0, socket.MSG_PEEK | socket.MSG_TRUNC)[0]
-                data = sock.recv(length)
+                data = sock.recv(max(length, 1))
                 if data:
-                    record = json.loads(data)
+                    record = json.loads(data if data.startswith(b"{") else data.partition(b"rd-command: ")[2])
                     if isinstance(record, dict):
                         f.write(json.dumps(record, ensure_ascii=True) + "\n")
             except (KeyboardInterrupt, SystemExit):

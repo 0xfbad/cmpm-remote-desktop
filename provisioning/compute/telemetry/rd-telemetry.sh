@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
-# rd-telemetry.sh - snapshot per-session cgroup telemetry for rd.slice.
-# Installed to /usr/local/lib/rd-telemetry.sh, driven by rd-telemetry.timer.
-# Composes JSON without a jq dependency and atomically publishes a strict v1
-# runner-readiness contract plus per-container telemetry.
-# The trap guarantees exit 0 so a partial read can never put the oneshot
-# service into systemd failure backoff.
 set -u
 trap 'exit 0' EXIT
 
-# Overridable for unprivileged testing.
 TELEMETRY_DIR="${RD_TELEMETRY_DIR:-/var/lib/rd-telemetry}"
 SLICE_CGROUP="${RD_SLICE_CGROUP:-/sys/fs/cgroup/rd.slice}"
 NETWORK_CONFIG="${RD_NETWORK_CONFIG:-/etc/rd-network.conf}"
 
-# Installed by network provisioning, root-owned and shell-escaped with %q.
 RD_NETWORK_POLICY_VERSION=""
 RD_POOL_BASE=""
 RD_POOL_SIZE=""
@@ -46,12 +38,7 @@ within_percent() {
   }'
 }
 
-# slice_unconfigured is decided from systemd properties, NOT from cgroup
-# directory existence: /sys/fs/cgroup/rd.slice is absent whenever the slice
-# is merely inactive (zero sessions), and that must NOT read as
-# "unconfigured". An unprovisioned host shows MemoryMax=infinity on the
-# implicitly-created slice; a missing unit shows empty output.
-slice_props="$(systemctl show rd.slice -p LoadState -p CPUWeight -p IOWeight -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax --value 2>/dev/null)" || slice_props=""
+slice_props="$(systemctl show rd.slice -p LoadState -p CPUWeight -p IOWeight -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax --value 2>/dev/null)" || slice_props="" # idle slices can have no cgroup directory
 readarray -t slice_values <<<"$slice_props"
 load_state="${slice_values[0]:-}"
 cpu_weight="${slice_values[1]:-}"
@@ -81,10 +68,6 @@ if [ "$slice_configured" = true ] &&
   compute_limits_match=true
 fi
 
-# The non-dev network prototype installer owns this table and its invariant
-# peer drop. Report the result in the trusted host snapshot so a future
-# consumer can detect reboot/manual policy loss; it does not prove that a
-# complete production firewall exists.
 nft_rules="$(nft list ruleset 2>/dev/null)" || nft_rules=""
 has_marker() { grep -q "comment \"$1\"" <<<"$nft_rules"; }
 network_policy_loaded=false
@@ -207,8 +190,6 @@ if [ "$storage_driver" = overlay2 ] && [ "$storage_backing" = xfs ] &&
   storage_ready=true
 fi
 
-# Emit {"avg10":..,"avg60":..,"avg300":..,"total":..} from the "some" line
-# of a PSI file; zeros if the file or line is missing.
 pressure_json() {
   awk '
         $1 == "some" {
@@ -224,7 +205,6 @@ pressure_json() {
     printf '{"avg10": 0, "avg60": 0, "avg300": 0, "total": 0}'
 }
 
-# Emit the six counters of memory.events; zeros for missing keys/file.
 memory_events_json() {
   awk '
         { v[$1] = $2 }
@@ -235,7 +215,6 @@ memory_events_json() {
     printf '{"low": 0, "high": 0, "max": 0, "oom": 0, "oom_kill": 0, "oom_group_kill": 0}'
 }
 
-# Emit {"max": N} from pids.events; zero if missing.
 pids_events_json() {
   awk '
         $1 == "max" { m = $2 }
@@ -247,14 +226,11 @@ pids_events_json() {
 containers=""
 sep=""
 for scope_dir in "$SLICE_CGROUP"/docker-*.scope; do
-  # Glob may match nothing (slice inactive/absent); the literal pattern is
-  # not a directory, so this also serves as the no-match guard.
   [ -d "$scope_dir" ] || continue
 
   scope_name="${scope_dir##*/}"
   cid="${scope_name#docker-}"
   cid="${cid%.scope}"
-  # Only full 64-hex container ids.
   case "$cid" in
   *[!0-9a-f]*) continue ;;
   esac
@@ -266,27 +242,19 @@ for scope_dir in "$SLICE_CGROUP"/docker-*.scope; do
   mem_ev="$(memory_events_json "$scope_dir/memory.events")"
   pids_ev="$(pids_events_json "$scope_dir/pids.events")"
 
-  # Raw first line of io.stat (may be empty when no io yet / file absent).
-  # Content is "MAJ:MIN key=val ..." - no characters needing JSON escaping.
   io_stat="$(sed -n '1p' "$scope_dir/io.stat" 2>/dev/null)" || io_stat=""
 
   mem_cur="$(cat "$scope_dir/memory.current" 2>/dev/null)" || mem_cur=""
   case "$mem_cur" in
   '' | *[!0-9]*) mem_cur=0 ;;
   esac
-  # memory.max is raw text on purpose: it can be the string "max".
   mem_max="$(cat "$scope_dir/memory.max" 2>/dev/null)" || mem_max=""
 
-  # Host-observed process-name count. /proc/PID/exe is subject to ptrace access
-  # checks across UIDs; /proc/PID/comm remains readable to this root service
-  # without granting CAP_SYS_PTRACE. Linux truncates comm to TASK_COMM_LEN-1,
-  # hence the expected tlog-rec-sessio spelling. Container root can still kill
-  # or replace tlog, so a transition to zero is a gap signal, not proof.
   tlog_processes=0
   while read -r pid; do
     comm="$(cat "/proc/$pid/comm" 2>/dev/null)" || comm=""
     case "$comm" in
-    tlog-rec-session | tlog-rec-sessio) tlog_processes=$((tlog_processes + 1)) ;;
+    tlog-rec-session | tlog-rec-sessio) tlog_processes=$((tlog_processes + 1)) ;; # comm names are limited to 15 characters
     esac
   done <"$scope_dir/cgroup.procs"
 
@@ -330,8 +298,6 @@ cidrs_json() {
 proxy_cidrs_json="$(cidrs_json "$RD_PROXY_CIDRS")"
 runner_peer_cidrs_json="$(cidrs_json "$RD_RUNNER_PEER_CIDRS")"
 
-# tmp-then-rename: atomic on the same filesystem, readers never see a
-# partial file. Single fixed-size file, so the spool is bounded.
 printf '%s\n' "{
   \"schema_version\": 1,
   \"ts\": $(date +%s),

@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""rd-tlog-collector: per-runner sink for tlog session transcripts.
-
-Sessions bind-mount this daemon's AF_UNIX datagram socket as /dev/log; tlog
-(writer=syslog) sends JSON records through glibc syslog(3). Attribution is by
-SCM_CREDENTIALS: the kernel-translated sender pid is resolved through
-/proc/<pid>/cgroup to a docker container id, then to the container name over
-the docker API. Forging another session's pid needs CAP_SYS_ADMIN, which the
-session containers do not have (cap_drop=ALL + a small allowlist) - a student
-can only pollute their OWN transcript, which is equivalent to producing output.
-
-Files land in <state-dir>/sessions/<container-name>.tlog.jsonl (tlog-play
-compatible) with non-tlog syslog lines in <name>.syslog.log and a .meta
-sidecar carrying the last-write epoch (the visible-gap record when a student
-kills the recorder).
-
-Stdlib only. Run under systemd socket activation (rd-tlog-collector.socket):
-systemd holds the socket fd across collector restarts, so the bind-mounted
-inode stays live for running sessions. Never restart the .socket unit while
-sessions run - a re-bind replaces the inode and running containers keep the
-dead one until session end.
-"""
 
 from __future__ import annotations
 
@@ -36,17 +15,15 @@ import time
 _CRED_SIZE = struct.calcsize("3i")
 
 CGROUP_RE = re.compile(r"docker-([0-9a-f]{64})\.scope")
-# path-traversal guard for names that come back from the docker API
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,200}$")
 
 RECV_SIZE = 65536
-PID_CACHE_TTL = 2.0  # seconds; pid-reuse inside this window is not attacker-steerable
+PID_CACHE_TTL_SECONDS = 2.0
 FLUSH_META_EVERY = 5.0
 USAGE_RESCAN_EVERY = 60.0
 
 
 class DockerNames:
-    """container id -> name over the docker unix socket, cached."""
 
     def __init__(self, docker_sock: str = "/var/run/docker.sock") -> None:
         self.docker_sock = docker_sock
@@ -96,7 +73,6 @@ def cgroup_container_id(pid: int) -> str | None:
 
 
 def extract_tlog_json(payload: bytes) -> dict | None:
-    """first '{' after the syslog header; must carry tlog's ver+rec keys."""
     idx = payload.find(b"{")
     if idx == -1:
         return None
@@ -125,7 +101,6 @@ class Collector:
         self.per_session_max = per_session_max
         self.total_max = total_max
         self.names = DockerNames(docker_sock)
-        # pid -> (session_name | None, resolved_at)
         self.pid_cache: dict[int, tuple[str | None, float]] = {}
         self.session_bytes: dict[str, int] = {}
         self.capped: set[str] = set()
@@ -135,17 +110,9 @@ class Collector:
         self.dropped = 0
         self.last_meta_flush: dict[str, float] = {}
         self.last_usage_scan = 0.0
-        self._restore_usage()
+        self._restore_usage() # restarts must retain byte cap accounting
 
     def _restore_usage(self) -> None:
-        """Rebuild cap accounting from durable files after every restart.
-
-        The collector is intentionally restartable under systemd socket
-        activation.  Starting counters at zero made every restart reset both
-        byte caps, so the limits were not limits at all.  Symlinks and special
-        files are ignored; the service's protected state directory should
-        contain only collector-owned regular files.
-        """
         self.session_bytes = {}
         self.total_bytes = 0
         suffixes = (".tlog.jsonl", ".syslog.log", ".jsonl")
@@ -169,24 +136,21 @@ class Collector:
         self.total_capped = self.total_bytes >= self.total_max
         self.last_usage_scan = time.time()
 
-    # -- attribution ---------------------------------------------------------
 
     def resolve(self, pid: int) -> str | None:
         now = time.time()
         cached = self.pid_cache.get(pid)
-        if cached and now - cached[1] < PID_CACHE_TTL:
+        if cached and now - cached[1] < PID_CACHE_TTL_SECONDS:
             return cached[0]
         cid = cgroup_container_id(pid)
         name = self.names.lookup(cid) if cid else None
         if name and not NAME_RE.match(name):
-            # keep the record but quarantine the path
             name = f"other/{cid}" if cid else None
         self.pid_cache[pid] = (name, now)
         if len(self.pid_cache) > 4096:
-            self.pid_cache = {p: v for p, v in self.pid_cache.items() if now - v[1] < PID_CACHE_TTL}
+            self.pid_cache = {p: v for p, v in self.pid_cache.items() if now - v[1] < PID_CACHE_TTL_SECONDS}
         return name
 
-    # -- writing -------------------------------------------------------------
 
     def _path_for(self, name: str, suffix: str) -> str:
         if name.startswith("other/"):
@@ -194,9 +158,6 @@ class Collector:
         return os.path.join(self.sessions_dir, f"{name}{suffix}")
 
     def _append(self, name: str, suffix: str, data: bytes) -> None:
-        # The retention timer deletes old files independently. Rescan even
-        # while capped so reclaimed space becomes usable without restarting
-        # the collector (and without letting a restart reset accounting).
         if time.time() - self.last_usage_scan >= USAGE_RESCAN_EVERY:
             self._restore_usage()
         if self.total_capped:
@@ -220,7 +181,6 @@ class Collector:
         self.total_bytes += len(data)
 
     def _refresh_caps_if_due(self) -> None:
-        """Refresh durable accounting even when the fast-drop path is active."""
         if time.time() - self.last_usage_scan >= USAGE_RESCAN_EVERY:
             self._restore_usage()
 
@@ -236,7 +196,6 @@ class Collector:
                 json.dump({"last_write": now, "bytes": self.session_bytes.get(name, 0) + len(data)}, f)
             self.last_meta_flush[name] = now
 
-    # -- main loop -----------------------------------------------------------
 
     def run(self) -> None:
         while True:
@@ -253,18 +212,13 @@ class Collector:
                 self.unattributed += 1
                 continue
 
-            # drop-fast ordering: creds -> cache -> cap check, before any JSON
-            # parse or disk IO. the loop must always drain, floods included
             name = self.resolve(pid)
             if name is None:
                 self.unattributed += 1
                 self._append("unattributed", ".jsonl", payload + b"\n")
                 continue
-            # The retention timer may have deleted capped files. Refresh
-            # before the fast drop so capacity can recover without a service
-            # restart; _append's rescan alone is unreachable from this path.
             if name in self.capped or self.total_capped:
-                self._refresh_caps_if_due()
+                self._refresh_caps_if_due() # retention can reclaim capacity while this path skips writes
             if name in self.capped or self.total_capped:
                 self.dropped += 1
                 continue
@@ -274,12 +228,10 @@ class Collector:
                 idx = payload.find(b"{")
                 self._append(name, ".tlog.jsonl", payload[idx:] + b"\n")
             else:
-                # non-tlog syslog traffic (sudo, sshd) is a free extra record
                 self._append(name, ".syslog.log", payload + b"\n")
 
 
 def make_socket(path: str) -> socket.socket:
-    # systemd socket activation: LISTEN_FDS means fd 3 is our bound socket
     if os.environ.get("LISTEN_FDS"):
         sock = socket.socket(fileno=3)
     else:
@@ -300,7 +252,7 @@ def make_socket(path: str) -> socket.socket:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description="collect terminal output from the runner socket", formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--socket", default="/run/rd-tlog/log.sock")
     parser.add_argument("--state-dir", default=os.environ.get("STATE_DIRECTORY", "/var/lib/rd-tlog"))
     parser.add_argument("--docker-sock", default="/var/run/docker.sock")

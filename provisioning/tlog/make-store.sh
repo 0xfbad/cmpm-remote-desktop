@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Create a dedicated, finite transcript filesystem. Existing filesystems are
-# refused unless --force is supplied for the exact block device. --force never
-# bypasses an in-use device, unsafe mountpoint, swap, holder, or fstab check.
 set -euo pipefail
 
 usage() {
@@ -74,8 +71,6 @@ preflight_mountpoint() {
     fail "mountpoint is already mounted: $mountpoint"
   fi
 
-  # Never silently replace an existing boot-time mount owner, including one
-  # expressed as UUID=, LABEL=, a symlink, or another device spelling.
   target_source=$(findmnt -srne -M "$mountpoint" -o SOURCE 2>/dev/null || true)
   [ -z "$target_source" ] ||
     fail "fstab already has an entry for mountpoint $mountpoint ($target_source)"
@@ -98,9 +93,6 @@ device=$(readlink -f -- "$device") || fail "cannot resolve device: ${args[0]}"
 [ -b "$device" ] || fail "$device is not a block device"
 preflight_mountpoint
 
-# Treat the selected device as a tree. Selecting a whole disk must not evade
-# checks merely because its mounted partition, swap, or consumer has another
-# pathname.
 mapfile -t block_paths < <(lsblk -nrpo NAME "$device")
 [ "${#block_paths[@]}" -gt 0 ] || fail "cannot inspect block-device tree: $device"
 
@@ -128,16 +120,11 @@ for block_path in "${block_paths[@]}"; do
     fail "$block_path has active block-device holders (dm-crypt, LVM, mdraid, or similar)"
   fi
 
-  # findmnt resolves UUID=/LABEL= fstab entries, so check every descendant
-  # rather than only the spelling supplied on the command line.
   fstab_targets=$(findmnt -srne -S "$block_path" -o TARGET 2>/dev/null || true)
   [ -z "$fstab_targets" ] ||
     fail "fstab already references $block_path (target: $fstab_targets)"
 done
 
-# A parent disk's blkid TYPE omits its partition table and child filesystems.
-# Never let --force erase all children: select a leaf partition, or explicitly
-# wipe a reviewed partition table outside this helper before retrying.
 partition_table=$(lsblk -dnro PTTYPE "$device" 2>/dev/null || true)
 if [ -n "$partition_table" ] || [ "${#block_paths[@]}" -ne 1 ]; then
   fail "$device contains a partition table or child block devices; select a leaf device"
@@ -180,15 +167,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Verify the live mount before changing boot state. A failure leaves fstab
-# untouched and the cleanup trap unmounts the newly formatted store.
 mount -o nodev,nosuid,noexec -- "$device" "$mountpoint"
 store_mounted=1
 RD_TLOG_STORE="$mountpoint" "$(dirname "$0")/check-store.sh"
 chmod 0750 "$mountpoint"
 
-# Replace fstab atomically on the /etc filesystem. Refuse a symlink because
-# rename would replace the link rather than the intended file.
 [ ! -L /etc/fstab ] || fail "/etc/fstab may not be a symlink"
 fstab_candidate=$(mktemp /etc/.fstab.rd-tlog.XXXXXX)
 if [ -e /etc/fstab ]; then

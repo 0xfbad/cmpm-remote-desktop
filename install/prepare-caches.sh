@@ -1,12 +1,11 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-# students need package metadata offline
 timeout --kill-after=5s 300s apt-get update --error-on=any \
   -o Acquire::Retries=3 \
   -o Acquire::Languages=none \
   -o Acquire::http::Timeout=30 \
-  -o Acquire::https::Timeout=30
+  -o Acquire::https::Timeout=30 # students need package metadata offline
 apt-get clean
 compgen -G '/var/lib/apt/lists/*_Packages*' >/dev/null
 

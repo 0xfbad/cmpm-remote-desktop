@@ -60,8 +60,7 @@ DOCKER_MONITOR_SERVICES=(rd-io-tripwire.service rd-telemetry.service)
 quiesce_docker_monitoring() {
   local load_state mask_state service timer
 
-  # installed monitors can start docker while the device checks run
-  systemctl mask --runtime --now "${DOCKER_MONITOR_TIMERS[@]}" >/dev/null ||
+  systemctl mask --runtime --now "${DOCKER_MONITOR_TIMERS[@]}" >/dev/null || # installed monitors can start docker while the device checks run
     fail "cannot runtime-mask Docker monitoring timers"
   for timer in "${DOCKER_MONITOR_TIMERS[@]}"; do
     mask_state=$(systemctl is-enabled "$timer" 2>/dev/null || true)
@@ -112,8 +111,7 @@ preflight_mountpoint() {
     fail "mountpoint is already mounted: $mountpoint"
   fi
 
-  # formatting changes the uuid stored by existing fstab entries
-  target_source=$(findmnt -srne -M "$mountpoint" -o SOURCE 2>/dev/null || true)
+  target_source=$(findmnt -srne -M "$mountpoint" -o SOURCE 2>/dev/null || true) # formatting changes the uuid stored by existing fstab entries
   [ -z "$target_source" ] ||
     fail "fstab already has an entry for mountpoint $mountpoint ($target_source)"
 
@@ -143,23 +141,8 @@ verify_xfs_mount() {
 print_next_steps() {
   local mountpoint="$1"
   cat <<EOF
-
-XFS data-root ready at $mountpoint (mounted with prjquota).
-
-Next steps:
-  1. Point dockerd at it — either in /etc/docker/daemon.json:
-         "data-root": "$mountpoint"
-     or for a scratch test daemon:
-         dockerd --data-root "$mountpoint"
-  2. Restart docker, then verify:
-         docker info | grep -E 'Backing Filesystem|Supports d_type'
-     must show: Backing Filesystem: xfs / Supports d_type: true
-  3. Runner only: install the storage opts + interlock:
-         ../install.sh --with-storage-opts
-  4. Only after Docker is configured, running, and verified, release the
-     maintenance hold:
-         systemctl unmask --runtime rd-io-tripwire.timer rd-telemetry.timer
-         systemctl start rd-io-tripwire.timer rd-telemetry.timer
+set docker data-root to $mountpoint then restart docker and run docker info, verify Backing Filesystem is xfs and Supports d_type is true
+run provisioning/storage/install.sh --with-storage-opts then systemctl unmask --runtime rd-io-tripwire.timer rd-telemetry.timer and systemctl start rd-io-tripwire.timer rd-telemetry.timer, keep these timers masked until docker is configured and verified
 EOF
 }
 
@@ -187,7 +170,7 @@ if [ "$LOOPBACK" -eq 1 ]; then
   loopdev=
   loop_mounted=0
   image_created=0
-  # shellcheck disable=SC2329 # invoked indirectly by EXIT trap
+  # shellcheck disable=SC2329
   cleanup_loopback() {
     local status=$?
     trap - EXIT
@@ -200,8 +183,7 @@ if [ "$LOOPBACK" -eq 1 ]; then
   }
   trap cleanup_loopback EXIT
 
-  # sparse images can exhaust the backing filesystem before quotas
-  (umask 077 && fallocate -l "$size" "$img")
+  (umask 077 && fallocate -l "$size" "$img") # sparse images can exhaust the backing filesystem before quotas
   image_created=1
 
   loopdev=$(losetup --find --show -- "$img")
@@ -242,8 +224,7 @@ quiesce_docker_monitoring
 docker_must_be_stopped
 preflight_mountpoint
 
-# mounted partitions can make an otherwise unused parent device unsafe
-mapfile -t block_paths < <(lsblk -nrpo NAME "$device")
+mapfile -t block_paths < <(lsblk -nrpo NAME "$device") # mounted partitions can make an otherwise unused parent device unsafe
 [ "${#block_paths[@]}" -gt 0 ] || fail "cannot inspect block-device tree: $device"
 if lsblk -nrpo MOUNTPOINTS "$device" 2>/dev/null | grep -q '[^[:space:]]'; then
   fail "$device or one of its descendants is mounted or otherwise live"
@@ -265,20 +246,17 @@ for block_path in "${block_paths[@]}"; do
   done
 
   block_name=${block_path##*/}
-  # --force permits existing filesystems but never active consumers
-  if compgen -G "/sys/class/block/$block_name/holders/*" >/dev/null; then
+  if compgen -G "/sys/class/block/$block_name/holders/*" >/dev/null; then # --force permits existing filesystems but never active consumers
     fail "$block_path has active block-device holders (dm-crypt, LVM, mdraid, or similar)"
   fi
 
-  # fstab aliases must resolve to the same device before formatting
-  fstab_targets=$(findmnt -srne -S "$block_path" -o TARGET 2>/dev/null || true)
+  fstab_targets=$(findmnt -srne -S "$block_path" -o TARGET 2>/dev/null || true) # fstab aliases must resolve to the same device before formatting
   [ -z "$fstab_targets" ] ||
     fail "fstab already references $block_path (target: $fstab_targets)"
 done
 
-# formatting a parent device can erase unrelated child filesystems
 partition_table=$(lsblk -dnro PTTYPE "$device" 2>/dev/null || true)
-if [ -n "$partition_table" ] || [ "${#block_paths[@]}" -ne 1 ]; then
+if [ -n "$partition_table" ] || [ "${#block_paths[@]}" -ne 1 ]; then # formatting a parent device can erase unrelated child filesystems
   fail "$device contains a partition table or child block devices; select a leaf device"
 fi
 
@@ -319,8 +297,7 @@ real_mounted=1
 verify_xfs_mount
 
 [ ! -L /etc/fstab ] || fail "/etc/fstab may not be a symlink"
-# failed mount verification must never leave a boot entry
-fstab_candidate=$(mktemp /etc/.fstab.rd-storage.XXXXXX)
+fstab_candidate=$(mktemp /etc/.fstab.rd-storage.XXXXXX) # failed mount verification must never leave a boot entry
 if [ -e /etc/fstab ]; then
   [ -f /etc/fstab ] || fail "/etc/fstab is not a regular file"
   cp --preserve=all -- /etc/fstab "$fstab_candidate"

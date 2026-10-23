@@ -1,6 +1,3 @@
-# Installed to /etc/systemd/system/rd.slice by install.sh.
-# Parent cgroup for all remote-desktop session containers
-# (docker run --cgroup-parent rd.slice).
 
 [Unit]
 Description=Remote desktop session containers (ctfd-remote-desktop)
@@ -11,15 +8,7 @@ CPUWeight=50
 IOWeight=50
 MemoryHigh=70%
 MemoryMax=90%
-# Aggregate burst cushion. memory.swap.max is hierarchical, so zero here made
-# the plugin's documented per-session swap limits ineffective. 25% bounds
-# total session swap while retaining a real buffer for browser/GUI spikes.
 MemorySwapMax=25%
-# TasksMax: the handoff said 12288, but the admission cap (5-7 sessions) x
-# pids_limit 4096 = 20480-28672 exceeds that, so two fork-bombing students
-# would starve innocent sessions' forks at the slice -- the same
-# shared-counter failure the handoff rejects nproc for. 32768 still leaves
-# ~98k pids of host headroom under kernel.pid_max=131072.
 TasksMax=32768
 
 [Install]

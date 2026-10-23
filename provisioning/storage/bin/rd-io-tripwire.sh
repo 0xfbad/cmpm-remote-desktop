@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -u
-# failure must not trigger systemd backoff
-trap 'exit 0' EXIT
+trap 'exit 0' EXIT # failure must not trigger systemd backoff
 
 RATE_TRIP_BYTES="${RATE_TRIP_BYTES:-209715200}"
 CONSEC="${CONSEC:-3}"
@@ -37,8 +36,7 @@ ihard_pass() {
   [ -n "$upperdir" ] && [ -d "$upperdir" ] || return 0
   projid=$(lsattr -pd "$upperdir" 2>/dev/null | awk '{print $1; exit}')
   case "$projid" in '' | *[!0-9]*) return 0 ;; esac
-  # project zero contains unrelated files
-  [ "$projid" -gt 0 ] 2>/dev/null || return 0
+  [ "$projid" -gt 0 ] 2>/dev/null || return 0 # project zero contains unrelated files
   if xfs_quota -x -c "limit -p ihard=$IHARD $projid" "$DATA_ROOT" 2>/dev/null; then
     : >"$STATE_DIR/$id.ihard"
     logger -t rd-io-tripwire "ihard=$IHARD set for projid=$projid container=$id"
@@ -52,8 +50,7 @@ pause_writer() {
     return
   fi
 
-  # removing the container would discard its writable layer
-  docker pause "$id" >/dev/null 2>&1 || return
+  docker pause "$id" >/dev/null 2>&1 || return # removing the container would discard its writable layer
 
   ts=$(date +%s)
   printf '{"container_id":"%s","name":"%s","rate_bps":%d,"total_wbytes":%d,"ts":%d,"action":"pause"}\n' \
@@ -68,8 +65,7 @@ while read -r id name; do
   [ -n "$id" ] || continue
   seen="$seen$id "
 
-  # docker ps includes paused containers
-  if [ "$(docker inspect -f '{{.State.Paused}}' "$id" 2>/dev/null)" = "true" ]; then
+  if [ "$(docker inspect -f '{{.State.Paused}}' "$id" 2>/dev/null)" = "true" ]; then # docker ps includes paused containers
     continue
   fi
 
@@ -77,11 +73,10 @@ while read -r id name; do
 
   iostat_path=$(find_iostat "$id") || continue
 
-  # io.stat stays empty until the first attributed io
   wbytes=$(awk '{for (i = 1; i <= NF; i++)
                        if ($i ~ /^wbytes=/) { split($i, a, "="); s += a[2] }}
                   END { printf "%d", s + 0 }' "$iostat_path" 2>/dev/null)
-  case "$wbytes" in '' | *[!0-9]*) wbytes=0 ;; esac
+  case "$wbytes" in '' | *[!0-9]*) wbytes=0 ;; esac # io.stat stays empty until the first attributed io
 
   state_file="$STATE_DIR/$id"
   prev_wbytes="" prev_ts="" strikes=0

@@ -20,14 +20,8 @@ __si_prompt() {
   __si_history_id=$id
   [[ -z $__si_tty ]] && __si_tty=$(tty 2>/dev/null || echo "?")
   (
-    jq -nc \
-      --argjson ts "$EPOCHREALTIME" \
-      --arg cmd "$cmd" \
-      --argjson ec "$ec" \
-      --arg cwd "$PWD" \
-      --arg tty "$__si_tty" \
-      '{ts:$ts,cmd:$cmd,exit:$ec,duration_ms:null,cwd:$cwd,tty:$tty}' |
-      socat -u - UNIX-SENDTO:/run/.session-init.sock
+    /usr/local/bin/remote-desktop-command-sender /run/.session-init.sock \
+      "$EPOCHREALTIME" "$cmd" "$ec" null "$PWD" "$__si_tty"
   ) 2>/dev/null &
   disown "$!" 2>/dev/null || true
   return "$ec"

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Fail closed unless the transcript store is a separate, finite block-backed
-# XFS filesystem with defensive mount options.
 set -euo pipefail
 
 store="${RD_TLOG_STORE:-/var/lib/rd-tlog}"

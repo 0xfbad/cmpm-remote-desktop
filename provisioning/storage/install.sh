@@ -122,8 +122,7 @@ preflight_storage_opts() {
   command -v findmnt >/dev/null 2>&1 || fail "findmnt is required for storage preflight"
   command -v xfs_info >/dev/null 2>&1 || fail "xfs_info is required for storage preflight"
 
-  # service flags can override the configured data root
-  DATA_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) ||
+  DATA_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || # service flags can override the configured data root
     fail "cannot query the running Docker daemon for its active data-root"
   [ -n "$DATA_ROOT" ] || fail "Docker reported an empty data-root"
   [ -d "$DATA_ROOT" ] || fail "active Docker data-root is not a directory: $DATA_ROOT"
@@ -132,8 +131,7 @@ preflight_storage_opts() {
   *[[:space:]]*) fail "Docker data-root may not contain whitespace: $DATA_ROOT" ;;
   esac
 
-  # a missing docker mount must never fall back to the root filesystem
-  mount_target=$(findmnt -rn -M "$DATA_ROOT" -o TARGET 2>/dev/null) ||
+  mount_target=$(findmnt -rn -M "$DATA_ROOT" -o TARGET 2>/dev/null) || # a missing docker mount must never fall back to the root filesystem
     fail "active Docker data-root is not a dedicated mountpoint: $DATA_ROOT"
   mount_target=$(realpath -e -- "$mount_target") || fail "cannot resolve data-root mountpoint"
   [ "$mount_target" = "$DATA_ROOT" ] ||
@@ -225,8 +223,7 @@ if [ "$WITH_STORAGE_OPTS" -eq 1 ]; then
 fi
 
 jq -e 'type == "object"' "$candidate" >/dev/null || fail "generated daemon.json is invalid"
-# dockerd rejects settings that pass json syntax validation
-dockerd --validate --config-file "$candidate" >/dev/null ||
+dockerd --validate --config-file "$candidate" >/dev/null || # dockerd rejects settings that pass json syntax validation
   fail "dockerd rejected generated daemon.json; existing configuration was not changed"
 
 daemon_changed=1
@@ -243,7 +240,7 @@ if [ "$WITH_STORAGE_OPTS" -eq 1 ]; then
   fi
   dropin_candidate=$(mktemp "$DROPIN_DIR/.10-rd-storage-interlock.XXXXXX")
   {
-    printf '%s\n' '# Installed by rd storage provisioning after XFS preflight.' '[Unit]'
+    printf '%s\n' '[Unit]'
     printf 'RequiresMountsFor=%s\n' "$DATA_ROOT"
   } >"$dropin_candidate"
   chmod 0644 "$dropin_candidate"
@@ -361,8 +358,7 @@ elif [ "$RESTART_DOCKER" -eq 0 ]; then
 elif [ "$docker_was_active" -eq 0 ]; then
   echo "install.sh: Docker configuration changed, but Docker is inactive; leaving it stopped"
 else
-  # containers can appear between the initial check and the restart
-  if ! docker_is_drained; then
+  if ! docker_is_drained; then # containers can appear between the initial check and the restart
     restore_docker_configuration ||
       fail "Docker became busy and automatic configuration rollback failed"
     fail "Docker became busy after preflight; prior configuration was restored"

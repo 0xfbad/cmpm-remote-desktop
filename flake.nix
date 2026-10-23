@@ -78,6 +78,8 @@
                   shellcheck -x -P "$PWD" "$script"
                 done < <(find configs install provisioning -type f \
                   \( -name '*.sh' -o -name '*.bash' \) -print0)
+                bash -n configs/session-init/sender
+                shellcheck configs/session-init/sender
                 zsh -n configs/zshrc # zsh -n only parses its first file argument
                 zsh -n configs/session-init/hooks.zsh
                 touch $out
@@ -85,7 +87,7 @@
           python-tests =
             pkgs.runCommand "python-tests"
               {
-                nativeBuildInputs = [ pkgs.python3 ];
+                nativeBuildInputs = [ pkgs.python3 pkgs.ruff ];
               }
               ''
                 cd ${self}
@@ -93,6 +95,7 @@
                 python3 -m py_compile \
                   provisioning/tlog/rd_tlog_collector.py \
                   configs/session-init/collector
+                ruff check --no-cache --select F821 provisioning/tlog/rd_tlog_collector.py configs/session-init/collector
                 touch $out
               '';
           ttyd-patch =
@@ -117,8 +120,8 @@
                   < ${self}/install/ttyd-reconnect.patch
                 touch $out
               '';
-          systemd-unit-contracts =
-            pkgs.runCommand "systemd-unit-contracts"
+          systemd-units =
+            pkgs.runCommand "systemd-units"
               {
                 nativeBuildInputs = [ pkgs.gnugrep ];
               }

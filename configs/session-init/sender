@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+payload=$(jq -cn --arg ts "$2" --arg cmd "$3" --arg ec "$4" --arg dur "$5" --arg cwd "$6" --arg tty "$7" \
+  '{ts:($ts|tonumber),cmd:$cmd,exit:($ec|tonumber),duration_ms:($dur|fromjson),cwd:$cwd,tty:$tty}')
+export LC_ALL=C
+(( ${#payload} <= 60 * 1024 )) || exit 0
+exec timeout --signal=KILL 1s logger --socket "$1" --socket-errors=off --size 65536 --tag rd-command -- "$payload"

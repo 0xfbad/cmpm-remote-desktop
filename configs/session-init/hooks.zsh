@@ -1,4 +1,4 @@
-[[ -S /run/.session-init.sock || ( -d /var/lib/rd-workspace && -w /var/lib/rd-workspace ) ]] || return 0
+[[ -S /run/.session-init.sock || ( -d /var/lib/rd-workspace && -O /var/lib/rd-workspace && -w /var/lib/rd-workspace ) ]] || return 0
 zmodload zsh/datetime 2>/dev/null || return 0
 autoload -Uz add-zsh-hook
 
@@ -17,19 +17,12 @@ __si_precmd() {
 
     if [[ -S /run/.session-init.sock ]]; then
         {
-            jq -nc \
-                --argjson ts "$__si_ts" \
-                --arg cmd "$__si_cmd" \
-                --argjson ec "$ec" \
-                --argjson dur "${dur%.*}" \
-                --arg cwd "$PWD" \
-                --arg tty "$__si_tty" \
-                '{ts:$ts,cmd:$cmd,exit:$ec,duration_ms:$dur,cwd:$cwd,tty:$tty}' \
-            | socat -u - UNIX-SENDTO:/run/.session-init.sock
+            /usr/local/bin/remote-desktop-command-sender /run/.session-init.sock \
+                "$__si_ts" "$__si_cmd" "$ec" "${dur%.*}" "$PWD" "$__si_tty"
         } 2>/dev/null &!
     fi
 
-    if [[ -d /var/lib/rd-workspace && -w /var/lib/rd-workspace ]]; then
+    if [[ -d /var/lib/rd-workspace && -O /var/lib/rd-workspace && -w /var/lib/rd-workspace ]]; then
         local cmd=${__si_cmd//[$'\t\n\r']/ }
         printf '%d\t%d\t%d\t%s\t%s\n' \
             $EPOCHSECONDS $ec ${dur%.*} "${PWD/#$HOME/~}" "${cmd[1,200]}" \

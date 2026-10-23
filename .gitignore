@@ -1,5 +1,4 @@
 .direnv/
 __pycache__/
 
-# tests are local only, intentionally untracked
 tests/

@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# net-pool.sh -- create (or --verify) the fixed per-host pool of single-tenant
-# docker networks rd-net-00..rd-net-{N-1} (bridges rdb00..) with pinned /28
-# subnets carved from RD_POOL_BASE. Idempotent: existing networks are skipped,
-# networks are never removed here or at runtime.
-#
-# Per-runner values (see README.md):
-#   RD_POOL_BASE  runner1 10.77.0.0/20, runner2 10.77.16.0/20, runner3 10.77.32.0/20
-#   RD_POOL_SIZE  prototype slot count; the current plugin has no matching setting
-#   RD_BIND_IP    non-dev prototype mode: REQUIRED private management/WireGuard
-#                 address used as host_binding_ipv4. Empty requires --dev.
 set -euo pipefail
 
 RD_POOL_SIZE="${RD_POOL_SIZE:-24}"
@@ -77,7 +67,6 @@ int2ip() {
   echo "$(((n >> 24) & 255)).$(((n >> 16) & 255)).$(((n >> 8) & 255)).$((n & 255))"
 }
 
-# slot i -> RD_POOL_BASE + i*16 addresses, as a /28
 slot_subnet() {
   local i="$1"
   local base_int
@@ -92,7 +81,6 @@ create_pool() {
   for ((i = 0; i < RD_POOL_SIZE; i++)); do
     ii="$(printf '%02d' "$i")"
     subnet="$(slot_subnet "$i")"
-    # Idempotent guard: never touch an existing network.
     if ! docker network inspect "rd-net-$ii" >/dev/null 2>&1; then
       create_args=(
         --driver bridge
@@ -183,7 +171,6 @@ main() {
   esac
 }
 
-# Allow sourcing for the subnet-math helpers without running main.
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   main "$@"
 fi

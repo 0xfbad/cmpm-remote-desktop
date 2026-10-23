@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# install.sh - provision a compute host for ctfd-remote-desktop sessions.
-#
-#   install.sh [install]   install units + telemetry, then run verify
-#   install.sh verify      verification only; exits non-zero on any failure
-#
-# Any operator who configures the plugin with cgroup_parent=rd.slice must run
-# this script first (install mode ends with verify). See README.md: an
-# unprovisioned host silently gets an unlimited implicitly-created rd.slice.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,8 +27,6 @@ do_install() {
   systemctl daemon-reload
   systemctl enable --now rd.slice rd-telemetry.timer
   sysctl --system
-  # Pre-pull the pinned throwaway image used by the cgroup-placement probe.
-  # Telemetry itself is host-side and does not launch this image.
   docker pull "$READER_IMAGE"
   set +e
 }
@@ -50,7 +40,6 @@ fail() {
 }
 
 do_verify() {
-  # (1) rd.slice loaded with a real MemoryMax.
   local load_state cpu_weight io_weight mem_high mem_max swap_max tasks_max
   load_state="$(systemctl show rd.slice -p LoadState --value 2>/dev/null)"
   cpu_weight="$(systemctl show rd.slice -p CPUWeight --value 2>/dev/null)"
@@ -77,7 +66,6 @@ do_verify() {
     fail "rd.slice MemorySwapMax=${swap_max:-<empty>} (expected finite and non-zero)"
   fi
 
-  # (2) MemoryHigh/Max/SwapMax match the complete declarative tuple.
   local mem_total_kb
   mem_total_kb="$(awk '$1 == "MemTotal:" { print $2 }' /proc/meminfo)"
   if [ -n "$mem_total_kb" ] && [ -n "$mem_max" ] && [ "$mem_max" != "infinity" ]; then
@@ -125,7 +113,6 @@ do_verify() {
     fail "cannot check MemorySwapMax sizing"
   fi
 
-  # (3) system.slice MemoryMin == 2G (compare bytes).
   local mem_min
   mem_min="$(systemctl show system.slice -p MemoryMin --value 2>/dev/null)"
   if [ "$mem_min" = "2147483648" ]; then
@@ -134,7 +121,6 @@ do_verify() {
     fail "system.slice MemoryMin=${mem_min:-<empty>} (expected 2147483648)"
   fi
 
-  # (4) kernel.pid_max.
   local pid_max
   pid_max="$(sysctl -n kernel.pid_max 2>/dev/null)"
   if [ "$pid_max" = "131072" ]; then
@@ -143,7 +129,6 @@ do_verify() {
     fail "kernel.pid_max=${pid_max:-<empty>} (expected 131072)"
   fi
 
-  # (5) container placement under rd.slice works.
   if ! docker image inspect "$READER_IMAGE" >/dev/null 2>&1; then
     docker pull "$READER_IMAGE" >/dev/null 2>&1
   fi
@@ -153,8 +138,6 @@ do_verify() {
     fail "docker run --rm --cgroup-parent rd.slice READER_IMAGE true failed"
   fi
 
-  # (6) telemetry snapshot fresh. Run the script once directly instead of
-  # waiting for a timer tick.
   if [ -x /usr/local/lib/rd-telemetry.sh ]; then
     /usr/local/lib/rd-telemetry.sh
   fi

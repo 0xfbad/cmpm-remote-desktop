@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# install.sh -- idempotent per-host provisioning for the rd network pool.
-# All non-dev prototype inputs and the complete nft transaction are validated
-# before the first host mutation. The installed policy is then restored before
-# Docker on every boot by rd-network-policy.service. This prototype does not
-# implement the repository's complete production ingress matrix.
-#
-# Per-runner env: RD_POOL_BASE, RD_POOL_SIZE, RD_BIND_IP (see README.md).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +42,6 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required"
 command -v systemctl >/dev/null 2>&1 || die "systemctl is required"
 command -v dockerd >/dev/null 2>&1 || die "dockerd is required to validate daemon.json"
 
-# --- preflight: no host mutation above this line ---------------------------
 pool_args=()
 [ "$DEV_MODE" -eq 1 ] && pool_args+=(--dev)
 "$SCRIPT_DIR/net-pool.sh" "${pool_args[@]}" --preflight
@@ -86,8 +78,6 @@ if [ "$DEV_MODE" -eq 1 ]; then
   } >"$policy_candidate"
 else
   [ -f "$EGRESS_POLICY" ] || die "non-dev prototype egress policy missing: $EGRESS_POLICY (copy and fill nftables/rd-egress.nft.template)"
-  # Comments intentionally explain which values to replace; only executable
-  # define/rule lines count for placeholder rejection.
   if sed 's/[[:space:]]*#.*$//' "$EGRESS_POLICY" | grep -Eq '192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|REPLACE'; then
     die "$EGRESS_POLICY still contains documentation placeholders"
   fi
@@ -129,8 +119,6 @@ PY
   *) die "RD_RUNNER_PEER_CIDRS must include this runner's RD_BIND_IP (${RD_BIND_IP}/32)" ;;
   esac
   {
-    # `destroy` is idempotent when a table is absent. Both destroys and both
-    # declarations are one nft input and therefore one atomic transaction.
     printf 'destroy table bridge rd_iso\n'
     printf 'destroy table ip rd_egress\n'
     printf 'define PROXY_CIDRS = { %s }\n' "$proxy_cidrs"
@@ -141,15 +129,10 @@ PY
 fi
 nft -c -f "$policy_candidate" || die "candidate nftables policy failed syntax/kernel validation; host was not modified"
 
-# --- 1. daemon.json: merge default-address-pools ---------------------------
-# MERGE, never overwrite: the storage provisioning owns log-opts in this same
-# file, and any other unrelated keys must survive untouched.
 echo "==> merging default-address-pools into $DAEMON_JSON"
 if diff -u <(jq -S . <<<"$current") <(jq -S . <<<"$merged"); then
   echo "    daemon.json already up to date"
 else
-  # diff exits nonzero when there are changes; the hunk above is the
-  # operator-visible preview of exactly what will be applied.
   daemon_dir="${DAEMON_JSON%/*}"
   mkdir -p "$daemon_dir"
   daemon_target_candidate="$(mktemp "$daemon_dir/.daemon.json.XXXXXX")"
@@ -165,18 +148,15 @@ else
   echo "    the pinned rd-net-* subnets are unaffected)."
 fi
 
-# --- 2. network pool -------------------------------------------------------
 echo "==> creating network pool (net-pool.sh)"
 "$SCRIPT_DIR/net-pool.sh" "${pool_args[@]}"
 "$SCRIPT_DIR/net-pool.sh" "${pool_args[@]}" --verify
 
-# --- 3. rd-net-sysctl.service ----------------------------------------------
 echo "==> installing rd-net-sysctl.service"
 install -D -m 0644 "$SCRIPT_DIR/systemd/rd-net-sysctl.service" /etc/systemd/system/rd-net-sysctl.service
 systemctl daemon-reload
 systemctl enable --now rd-net-sysctl.service
 
-# --- 4. atomic, reboot-persistent nftables policy --------------------------
 if [ "$DEV_MODE" -eq 1 ]; then
   echo "==> DEV MODE: loading non-persistent bridge assertion only"
   nft -f "$policy_candidate"

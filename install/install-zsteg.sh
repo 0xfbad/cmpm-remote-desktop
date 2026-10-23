@@ -29,15 +29,13 @@ download_gem() {
   }
 }
 
-# Download every non-default runtime dependency explicitly. Installing with
-# --local prevents RubyGems from silently resolving a newer network artifact.
 download_gem iostruct "$IOSTRUCT_VERSION" "$IOSTRUCT_SHA256"
 download_gem prime "$PRIME_VERSION" "$PRIME_SHA256"
 download_gem rainbow "$RAINBOW_VERSION" "$RAINBOW_SHA256"
 download_gem zpng "$ZPNG_VERSION" "$ZPNG_SHA256"
 download_gem zsteg "$ZSTEG_VERSION" "$ZSTEG_SHA256"
 
-gem install --local --no-document "$tmpdir/iostruct-$IOSTRUCT_VERSION.gem"
+gem install --local --no-document "$tmpdir/iostruct-$IOSTRUCT_VERSION.gem" # network resolution can replace pinned dependencies
 gem install --local --no-document "$tmpdir/prime-$PRIME_VERSION.gem"
 gem install --local --no-document "$tmpdir/rainbow-$RAINBOW_VERSION.gem"
 gem install --local --no-document "$tmpdir/zpng-$ZPNG_VERSION.gem"

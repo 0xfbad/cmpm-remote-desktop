@@ -126,7 +126,7 @@ static void guest_apparmor(void) {
             errno = EINVAL;
             fail("guest apparmor profile");
         }
-        int attribute = openat(trusted_proc, "self/attr/exec", O_WRONLY | O_CLOEXEC | O_NOFOLLOW);
+        int attribute = openat(trusted_proc, "self/attr/apparmor/exec", O_WRONLY | O_CLOEXEC | O_NOFOLLOW);  // stacked security modules require the apparmor attribute
         if (attribute < 0) fail("guest apparmor proc attribute");
         const char *transition = "exec docker-default";
         if (write(attribute, transition, strlen(transition)) != (ssize_t)strlen(transition)) fail("guest apparmor transition");
